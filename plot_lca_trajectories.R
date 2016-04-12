@@ -5,8 +5,8 @@
 library(ggplot2)
 # state_names <- c('A', 'B1', 'B2', 'C1', 'C2', 'D', 'E', 'F')
 # week_names <- c('2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13')
-cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", 
-                "#0072B2", "#D55E00", "#CC79A7")
+# cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", 
+#                 "#0072B2", "#D55E00", "#CC79A7")
 
 create.trajectory.df <- function(data.in, traj_idx, new_idx) {
   # Testing var
@@ -68,11 +68,11 @@ create.trajectory.df <- function(data.in, traj_idx, new_idx) {
 }
 
 # Create the data frames for each trajectory
-traj1 <- create.trajectory.df(lc5.fullcourse$probs, 1, 2)
-traj2 <- create.trajectory.df(lc5.fullcourse$probs, 2, 5)
-traj3 <- create.trajectory.df(lc5.fullcourse$probs, 3, 1)
-traj4 <- create.trajectory.df(lc5.fullcourse$probs, 4, 3)
-traj5 <- create.trajectory.df(lc5.fullcourse$probs, 5, 4)
+traj1 <- create.trajectory.df(lc5.fullcourse$probs, 1, 1)
+traj2 <- create.trajectory.df(lc5.fullcourse$probs, 2, 2)
+traj3 <- create.trajectory.df(lc5.fullcourse$probs, 3, 3)
+traj4 <- create.trajectory.df(lc5.fullcourse$probs, 4, 4)
+traj5 <- create.trajectory.df(lc5.fullcourse$probs, 5, 5)
 
 # Concatenate them to create the plot
 result <- rbind(traj1, traj2, traj3, traj4, traj5)
@@ -100,15 +100,15 @@ ggplot(result, aes(x = Week, y = Prob, fill = State)) +
 #                              "B1",
 #                              "A")) +
   theme_bw() +
-  theme(text = element_text(size = 20),
-        axis.text.x = element_text(size = 20),
-        strip.text.x = element_text(size = 20),
-        axis.text.y = element_text(size = 20),
-        legend.title = element_text(size = 20, face="bold"),
-        legend.text = element_text(size = 20),
-        legend.key = element_rect(colour = NA))
+  theme(text = element_text(size = 12),
+        strip.text.x = element_text(size = 12),
+        strip.text.y = element_text(size = 12),
+        axis.text.x = element_text(size = 9),
+        axis.text.y = element_text(size = 9),
+        legend.title = element_text(size = 12),
+        legend.text = element_text(size = 12))
 
-ggsave('trajectories.png', 
+ggsave('trajectories.tiff', 
        path = "~/Papers/1_Work/Jelena_flipped_trajectories",
-       width = 18.46, height = 15)
+       units = 'cm', width = 26, height = 15.5, dpi = 300)
 
