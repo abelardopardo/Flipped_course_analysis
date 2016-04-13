@@ -370,7 +370,7 @@ f.fullcourse <- cbind(cl.w2, cl.w3, cl.w4, cl.w5, cl.w6, cl.w7, cl.w8,
 eval.metrics <- data.frame()
 require(poLCA)
 set.seed(3003)
-for(i in 3:6) {
+for(i in 3:7) {
   lc <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, nclass = i, verbose = F, na.rm = F)
   metrics <- c(i, lc$aic, lc$bic, lc$llik, lc$Chisq)
   eval.metrics <- as.data.frame( rbind(eval.metrics, metrics) )
@@ -390,21 +390,29 @@ set.seed(3003)
 #                         nclass = 5, probs.start = probs.start, na.rm = F)
 
 ## examine the model with 4 classes
-lc4.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, 
-                        nclass = 4, graphs = T, na.rm = F)
-probs.start <- poLCA.reorder(lc4.fullcourse$probs.start, order(lc4.fullcourse$P,decreasing=T))
-lc4.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, graphs = T, 
-                        nclass = 4, probs.start = probs.start, na.rm = F)
+# lc4.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, 
+#                         nclass = 4, graphs = T, na.rm = F)
+# probs.start <- poLCA.reorder(lc4.fullcourse$probs.start, order(lc4.fullcourse$P,decreasing=T))
+# lc4.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, graphs = T, 
+#                         nclass = 4, probs.start = probs.start, na.rm = F)
+
+## examine the model with 6 classes
+lc6.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, 
+                        nclass = 6, na.rm = F)
+probs.start <- poLCA.reorder(lc6.fullcourse$probs.start, order(lc6.fullcourse$P,decreasing=T))
+lc6.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, graphs = T, 
+                        nclass = 6, probs.start = probs.start, na.rm = F)
 
 
 ## add the predicted class to each observation
 clusters.w213.pred <- clusters.w213
 # clusters.w213.pred$lca5 <- as.factor(lc5.fullcourse$predclass)
-clusters.w213.pred$lca4 <- as.factor(lc4.fullcourse$predclass)
+# clusters.w213.pred$lca4 <- as.factor(lc4.fullcourse$predclass)
+clusters.w213.pred$lca6 <- as.factor(lc6.fullcourse$predclass)
 str(clusters.w213.pred)
 
 ## write the features + the LCA class values to a file
-write.csv(x = clusters.w213.pred, file = "results/lca_w2_to_w13_4classes(March2016).csv", 
+write.csv(x = clusters.w213.pred, file = "results/lca_w2_to_w13_6classes(April2016).csv", 
           row.names = F, quote = F)
 
 
