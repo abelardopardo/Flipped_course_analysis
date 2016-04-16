@@ -1,13 +1,14 @@
 ###########################################################################################
 ## COMPARE CLUSTERS/GROUPS OBTAINED FOR THE LEARNING PATHS (SEQUENCES) THROUGH THE WHOLE 
-## COURSE (WEEKS 2-13) BASED ON THE STUDENTS FINAL EXAM SCORES 
+## COURSE (WEEKS 2-13) BASED ON THE STUDENTS MIDTERM AND FINAL EXAM SCORES 
 ############################################################################################
 
 ## load util functions required for comparison of student clusters
 source(file = "util_functions.R")
 
 # ## classes that students were assigned to using the LCA method 
-clusters.w213 <- read.csv(file = "results/lca_w2_to_w13_(March2016).csv")
+clusters.w213 <- read.csv(file = "results/lca_w2_to_w13_6classes(April2016).csv")
+#clusters.w213 <- read.csv(file = "results/lca_w2_to_w13_(March2016).csv")
 #clusters.w213 <- read.csv(file = "results/lca_w2_to_w13_4classes(March2016).csv")
 
 ## clusters/groups that students were assigned to when clustering the sequences of
@@ -21,7 +22,7 @@ seq.classes <- clusters.w213[,c(1,14)]
 ## Load all the scores
 all.scores <- read.csv(file = "datasets/data2u_sem2_14_student_all_variables.csv")
 ## keep only the relevant score
-scores <- all.scores[, c('user_id', 'SC_FE_TOT')]
+scores <- all.scores[, c('user_id', 'SC_MT_TOT', 'SC_FE_TOT')]
 
 ## check if there is difference between the users for whom scores are available and
 ## those for whom class info is available
@@ -37,46 +38,61 @@ library(plyr)
 
 ## compute summary statistics for the final exam score for each class
 colnames(classes.plus.scores)[2] <- 'class'
-summary.data <- final.score.per.class.stats(classes.plus.scores)                  
+fe.summary <- final.score.per.class.stats(classes.plus.scores)                  
 # this is for generating nice table layout
 require(knitr)
-kable(x = summary.data, format = "rst")
+kable(x = fe.summary, format = "rst")
+## do the same for midterm exam scores
+mt.summary <- midterm.score.per.class.stats(classes.plus.scores)                  
+kable(x = mt.summary, format = "rst")
 
 ## check if the exam scores are normally distributed
 qqnorm(classes.plus.scores$SC_FE_TOT)
 qqline(classes.plus.scores$SC_FE_TOT)
 shapiro.test(classes.plus.scores$SC_FE_TOT)
 ## W = 0.95035, p-value = 2.418e-08 - far from normally distributed
+shapiro.test(classes.plus.scores$SC_MT_TOT)
+## W = 0.95137, p-value = 3.169e-08
 ## use non-parametric tests
 
 kruskal.test(classes.plus.scores$SC_FE_TOT ~ classes.plus.scores$class)
-## chi-squared = 45.603, df = 3, p-value = 6.89e-10
-## there is a sign. difference bewtween the classes; check where the difference is
+## chi-squared = 46.871, df = 5, p-value = 6.035e-09
+## there is a sign. difference between the classes w.r.t. the final exam score
+kruskal.test(classes.plus.scores$SC_MT_TOT ~ classes.plus.scores$class)
+## chi-squared = 36.259, df = 5, p-value = 8.429e-07
+## the same applies to midterm exam score
 
 ## apply Mann-Whitney U Test to do pair-wise comparisons
-## compare class 1 with classes 2, 3, and 4
-comparison <- matrix(nrow = 10, ncol = 5, byrow = T)
-comparison[1,] <- c(1, 2, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 2))
-comparison[2,] <- c(1, 3, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 3))
-comparison[3,] <- c(1, 4, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 4))
-comparison[4,] <- c(1, 5, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 5))
-## compare class 2 with classes 3 and 4
-comparison[5,] <- c(2, 3, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 2, 3))
-comparison[6,] <- c(2, 4, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 2, 4))
-comparison[7,] <- c(2, 5, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 2, 5))
-## compare classes 3 and 4
-comparison[8,] <- c(3, 4, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 3, 4))
-comparison[9,] <- c(3, 5, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 3, 5))
-## comapre classes 4 and 5
-comparison[10,] <- c(4, 5, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 4, 5))
-
-comparison.df <- as.data.frame(comparison)
-colnames(comparison.df) <- c('c1', 'c2', 'Z', 'p', 'effect.size')
-
+## first for final exam score
+fe.comparison <- matrix(nrow = 15, ncol = 5, byrow = T)
+k <- 1
+for(i in 1:5) {
+  for(j in (i+1):6) {
+    fe.comparison[k,] <- c(i, j, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, i, j))
+    k <- k+1
+  }
+}
+fe.comparison.df <- as.data.frame(fe.comparison)
+colnames(fe.comparison.df) <- c('c1', 'c2', 'Z', 'p', 'effect.size')
 ## apply the FDR correction to the comparisons
-comparison.df <- apply.FDR.correction(comparison.df)
+fe.comparison.df <- apply.FDR.correction(fe.comparison.df)
+kable(x = fe.comparison.df, format = 'rst')
 
-kable(x = comparison.df, format = 'rst')
+## now for midterm exam score
+mt.comparison <- matrix(nrow = 15, ncol = 5, byrow = T)
+k <- 1
+for(i in 1:5) {
+  for(j in (i+1):6) {
+    mt.comparison[k,] <- c(i, j, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, i, j))
+    k <- k+1
+  }
+}
+mt.comparison.df <- as.data.frame(mt.comparison)
+colnames(mt.comparison.df) <- c('c1', 'c2', 'Z', 'p', 'effect.size')
+## apply the FDR correction to the comparisons
+mt.comparison.df <- apply.FDR.correction(mt.comparison.df)
+kable(x = mt.comparison.df, format = 'rst')
+
 
 ################################################################################################
 ## COMPARE CLUSTERS/GROUPS OBTAINED FOR THE LEARNING PATHS THROUGH THE WHOLE COURSE (WEEKS 2-13) 
