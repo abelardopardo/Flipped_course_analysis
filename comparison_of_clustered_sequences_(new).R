@@ -62,16 +62,25 @@ kruskal.test(classes.plus.scores$SC_MT_TOT ~ classes.plus.scores$class)
 ## chi-squared = 36.259, df = 5, p-value = 8.429e-07
 ## the same applies to midterm exam score
 
-## apply Mann-Whitney U Test to do pair-wise comparisons
+## apply Mann-Whitney U Test to do pair-wise comparisons for all class pairs
 ## first for final exam score
-fe.comparison <- matrix(nrow = 15, ncol = 5, byrow = T)
-k <- 1
-for(i in 1:5) {
-  for(j in (i+1):6) {
-    fe.comparison[k,] <- c(i, j, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, i, j))
-    k <- k+1
-  }
-}
+# fe.comparison <- matrix(nrow = 15, ncol = 5, byrow = T)
+# k <- 1
+# for(i in 1:5) {
+#   for(j in (i+1):6) {
+#     fe.comparison[k,] <- c(i, j, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, i, j))
+#     k <- k+1
+#   }
+# }
+
+## do the comparison only for the following classes: 1,2,4,6
+fe.comparison <- matrix(nrow = 6, ncol = 5, byrow = T)
+fe.comparison[1,] <- c(1, 2, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 2))
+fe.comparison[2,] <- c(1, 4, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 4))
+fe.comparison[3,] <- c(1, 6, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 1, 6))
+fe.comparison[4,] <- c(2, 4, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 2, 4))
+fe.comparison[5,] <- c(2, 6, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 2, 6))
+fe.comparison[6,] <- c(4, 6, compare.fexam.scores.Mann.Whitney.test(classes.plus.scores, 4, 6))
 fe.comparison.df <- as.data.frame(fe.comparison)
 colnames(fe.comparison.df) <- c('c1', 'c2', 'Z', 'p', 'effect.size')
 ## apply the FDR correction to the comparisons
@@ -79,14 +88,23 @@ fe.comparison.df <- apply.FDR.correction(fe.comparison.df)
 kable(x = fe.comparison.df, format = 'rst')
 
 ## now for midterm exam score
-mt.comparison <- matrix(nrow = 15, ncol = 5, byrow = T)
-k <- 1
-for(i in 1:5) {
-  for(j in (i+1):6) {
-    mt.comparison[k,] <- c(i, j, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, i, j))
-    k <- k+1
-  }
-}
+# mt.comparison <- matrix(nrow = 15, ncol = 5, byrow = T)
+# k <- 1
+# for(i in 1:5) {
+#   for(j in (i+1):6) {
+#     mt.comparison[k,] <- c(i, j, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, i, j))
+#     k <- k+1
+#   }
+# }
+
+## do the comparison only for the following classes: 1,2,4,6
+mt.comparison <- matrix(nrow = 6, ncol = 5, byrow = T)
+mt.comparison[1,] <- c(1, 2, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, 1, 2))
+mt.comparison[2,] <- c(1, 4, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, 1, 4))
+mt.comparison[3,] <- c(1, 6, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, 1, 6))
+mt.comparison[4,] <- c(2, 4, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, 2, 4))
+mt.comparison[5,] <- c(2, 6, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, 2, 6))
+mt.comparison[6,] <- c(4, 6, compare.midterm.scores.Mann.Whitney.test(classes.plus.scores, 4, 6))
 mt.comparison.df <- as.data.frame(mt.comparison)
 colnames(mt.comparison.df) <- c('c1', 'c2', 'Z', 'p', 'effect.size')
 ## apply the FDR correction to the comparisons
