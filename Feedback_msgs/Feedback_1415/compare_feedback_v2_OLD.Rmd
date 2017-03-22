@@ -1,0 +1,147 @@
+---
+title: "Comparison of student perception of feedback 2013 - 2015"
+author: "Abelardo Pardo"
+date: "7 December 2015"
+output: word_document
+---
+
+```{r setup, echo = FALSE, results = 'hide', messages = FALSE, warning = FALSE}
+require(gdata, quietly = TRUE)
+require(effsize, quietly = TRUE)
+require(ggplot2, quietly = TRUE)
+require(plyr, quietly = TRUE)
+require(gplots)
+options(digits = 2, scipen = 1)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+
+Feedback 2013
+=============
+```{r}
+#
+# Slurp the 2013 data
+#
+#setwd("~/Courses/Arduino/ELEC1601/Admin/USE/2013")
+df13 = read.csv("2013_1601_raw_data.csv", header = TRUE)
+q8_13 <- df13$q8[is.na(df13$q8) == FALSE] # Remove NA
+barplot(prop.table(table(q8_13)))
+```
+
+Feedback 2014
+=============
+```{r}
+#
+# Slurp the 2014 data
+#
+#setwd("~/Courses/Arduino/ELEC1601/Admin/USE/2014")
+df14 = read.xls("2014_detailed_data.xlsx", sheet = 1, header = TRUE)
+q8_14 <- df14$Q8[1:205]    # Remove the bottom columns with the summary
+q8_14 <- q8_14[is.na(q8_14) == FALSE] # Remove NA
+barplot(prop.table(table(q8_14)))
+```
+
+```{r, echo = FALSE}
+#
+# Slurp the 2015 data
+#
+#setwd("~/Courses/Arduino/ELEC1601/Admin/USE/2015")
+df15 = read.xls("2015_1601_raw_data.xlsx", sheet = 2, header = TRUE)
+q6_15 <- df15$q6[1:207]    # Remove the bottom columns with the summary
+q6_15 <- q6_15[is.na(q6_15) == FALSE] # Remove NA
+```
+
+Feedback 2015 (n =  `r length(q6_15)`)
+====================================
+```{r, echo = FALSE}
+barplot(prop.table(table(q6_15)))
+```
+
+Comparison
+==========
+
+```{r, echo = FALSE}
+df <- data.frame(Feedback = q8_13, Year = '13 (n = 214)')
+df <- rbind(df, data.frame(Feedback = q8_14, Year = '14 (n = 198)'))
+
+# Color
+# F8766D
+# 619CFF
+
+cdat <- ddply(df, "Year", summarise, Feedback.mean=mean(Feedback))
+ggplot(data = df, aes(factor(Feedback), fill = Year)) + 
+  geom_bar(aes(y = 100 * (..count..)/sum(..count..)), 
+           position = "dodge",
+           color = "black") +
+  geom_vline(data = cdat, 
+             aes(xintercept = Feedback.mean, 
+                 colour = cbPalette[1:2]),
+             linetype="dashed", size=1, show.legend=FALSE) +
+  scale_x_discrete(labels = c('Strong Disagree', 
+                              'Disagree', 
+                              'Neutral', 
+                              'Agree', 
+                              'Strong Agree')) +
+  ggtitle("Feedback from my assessment and otherwise was useful in helping me learn") +
+  xlab("") +
+  ylab("Percentage") +
+  scale_colour_manual(values = cbPalette) +
+  scale_fill_manual(values = cbPalette)
+
+ggsave("feedback_1314.png", path = "..")
+
+df2 <- rbind(df, data.frame(Feedback = q6_15, Year = '15 (n = 206)'))
+cdat2 <- ddply(df2, "Year", summarise, Feedback.mean=mean(Feedback))
+ggplot(data = df2, aes(factor(Feedback), fill = Year)) + 
+  geom_bar(aes(y = 100 * (..count..)/sum(..count..)), 
+           position = "dodge",
+           color = "black") +
+  geom_vline(data = cdat2, aes(xintercept = Feedback.mean, 
+                               colour = cbPalette[1:3]),
+             linetype="dashed", size=1, show.legend=FALSE) +
+  scale_x_discrete(labels = c('Strong Disagree', 'Disagree', 'Neutral', 'Agree',
+                                                                'Strong Agree')) +
+  # theme(text = element_text(size = 9)) +
+  ggtitle("Feedback from my assessment and otherwise was useful in helping me learn (13, 14)\nI have been guided by helpful feedback on my learning (15)") +
+  xlab("") +
+  ylab("Percentage") +
+  scale_colour_manual(values = c(cbPalette[3], cbPalette[1], cbPalette[2])) +
+  scale_fill_manual(values = cbPalette)
+
+ggsave("feedback_131415.png", path = "..")
+
+```
+
+T-test: Means are equal for both variables
+==========================================
+
+```{r}
+result <- t.test(q8_13, q8_14, var.equal = FALSE, paired = FALSE, 
+                 alternative = 'less')
+result <- t.test(q8_14, q6_15, var.equal = FALSE, paired = FALSE, 
+                 alternative = 'less')
+cd <- cohen.d(q6_15, q8_14, hedges.correction = TRUE)
+```
+
+An independent-samples t-test was conducted to compare the rating of feedback in the two editions of the course. There was a significant difference in the rating of feedback between the answers received in the 2014 edition (M=`r mean(q8_14)`, SD=`r sd(q8_14)`) and the 2015 edition (M=`r mean(q6_15)`, SD=`r sd(q6_15)`); t(`r result$parameter`) = `r result$statistic`, p = `r result$p.value`, Cohen's d = `r cd$estimate`. These results suggest that the treatment in the second edition had a medium positive effect on how students perceived feedback.
+
+ANOVA: Using the year as the factor that distinguishes the result
+=================================================================
+
+```{r, echo = FALSE}
+# http://statistics-help-for-students.com/How_do_I_report_a_1_way_between_subjects_ANOVA_in_APA_style.htm
+library(gplots)
+dfanova <- data.frame(x = 2013, y = q8_13)
+dfanova <- rbind(dfanova, data.frame(x = 2014, y = q8_14))
+dfanova <- rbind(dfanova, data.frame(x = 2015, y = q6_15))
+dfanova$x <- as.factor(dfanova$x)
+fit <- aov(y ~ x, data = dfanova)
+# summary(fit)
+tuk <- TukeyHSD(fit)
+# 
+png('../feedback_plotmeans.png', height=400, width=600, pointsize=12)
+plotmeans(dfanova$y ~ dfanova$x, digits=2, ccol="red", mean.labels=FALSE,
+          minbar=2.8, maxbar=4, xlab='', ylab='Satisfaction', ylim=c(3,4))
+dev.off()
+```
+
+A one-way between subjects ANOVA was conducted to compare the effects of the year on the level of student satisfaction with feedback reported by the 2013, 2014 and 2015 cohorts. There was a significant effect of the year on the reported level of satisfaction with feedback at the p < 0.05 level for the three years [F(`r summary(fit)[[1]]$Df[1]`, `r summary(fit)[[1]]$Df[2]`) = `r summary(fit)[[1]]$F[1]`, p=`r summary(fit)[[1]]$"Pr(>F)"[1]`]. Post hoc comparisons using the Tukey HSD test indicated that the mean score for the level of satisfaction with feedback in 2015 (M = `r mean(q6_15)`, SD=`r sd(q6_15)`) was significantly different than the value in 2014 (M=`r mean(q8_14)`, SD=`r sd(q8_14)`) with p<0.05. The effect size (Cohen’s d) was `r cd$estimate`. These results suggest that the use of personalised feedback messages used in the 2015 edition had a medium positive effect on how students perceived feedback. Additionally, the 2013 edition (M=`r mean(q8_13)`, SD=`r sd(q8_13)`) did not significantly differ from the 2014 edition (p=`r tuk$x[10]`).

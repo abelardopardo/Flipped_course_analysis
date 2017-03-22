@@ -1,0 +1,58 @@
+---
+title: "Comparison of student perception of feedback 2014/15"
+author: "Abelardo Pardo"
+date: "7 December 2015"
+output: html_document
+---
+
+```{r setup, echo = FALSE, results = 'hide', messages = FALSE, warning = FALSE}
+require(gdata, quietly = TRUE)
+require(effsize, quietly = TRUE)
+
+#
+# Slurp the 14 data
+#
+df14 = read.xls("2014_detailed_data.xlsx", sheet = 1, header = TRUE)
+q8_14 <- df14$Q8[1:205]    # Remove the bottom columns with the summary
+q8_14 <- q8_14[is.na(q8_14) == FALSE] # Remove NA
+```
+
+Feedback 2014 (n = `r length(q8_14)`)
+======================================
+
+```{r}
+hist(q8_14)
+```
+
+```{r, echo = FALSE}
+#
+# Slurp the 2015 data
+#
+df15 = read.xls("2015_1601_raw_data.xlsx", sheet = 2, header = TRUE)
+q6_15 <- df15$q6[1:207]    # Remove the bottom columns with the summary
+q6_15 <- q6_15[is.na(q6_15) == FALSE] # Remove NA
+```
+
+Feedback 2015 (n =  `r length(q6_15)`)
+====================================
+
+```{r}
+hist(q6_15)
+```
+
+T-test: Means are equal for both variables
+==========================================
+
+```{r}
+result <- t.test(q8_14, q6_15, var.equal = FALSE, paired = FALSE)
+cd <- cohen.d(q6_15, q8_14, hedges.correction = TRUE)
+```
+
+An independent-samples t-test was conducted to compare the rating of feedback in the two editions of the course. There was a significant difference in the rating of feedback between the answers received in the 2014 edition (M=`r mean(q8_14)`, SD=`r sd(q8_14)`) and the 2015 edition (M=`r mean(q6_15)`, SD=`r sd(q6_15)`); t(`r result$parameter`) = `r result$statistic`, p = `r result$p.value`, Cohen's d = `r cd$estimate`. These results suggest that the treatment in the second edition had a medium positive effect on how students perceived feedback.
+
+Additional analysis to be done. Students received personalised emails with their
+progress and some suggestions on what to do with the previous activities. 
+Include a sense of the type of reaction to those emails (checking the suffix in
+the URLs loaded by the students). It is very possible that only a fraction of
+the students did something immediate about the emails, but still, the perception
+of the feedback is better (half a standard deviation).
