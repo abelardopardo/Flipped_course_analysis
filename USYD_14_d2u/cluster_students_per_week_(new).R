@@ -34,7 +34,7 @@ require('knitr')
 kable(x = stats.w2, format = "rst")
 
 # add clusters to the feature set
-f.w2 <- as.data.frame( cbind(f.w2, cluster = cutree(hc.w2, k=5)))
+f.w3 <- as.data.frame( cbind(f.w2, cluster = cutree(hc.w2, k=5)))
 str(f.w2)
 
 ## WEEK 3

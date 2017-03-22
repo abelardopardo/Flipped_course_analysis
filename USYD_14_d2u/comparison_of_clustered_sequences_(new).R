@@ -109,6 +109,11 @@ mt.comparison.df <- as.data.frame(mt.comparison)
 colnames(mt.comparison.df) <- c('c1', 'c2', 'Z', 'p', 'effect.size')
 ## apply the FDR correction to the comparisons
 mt.comparison.df <- apply.FDR.correction(mt.comparison.df)
+print("Algorithm to Paper index permutation")
+print("Algorithm: 1, 2, 3, 4, 5, 6")
+print("Paper    : 2, 5, 1, 3, 4, 6")
+print("Paper    : 1, 2, 3, 4, 5, 6")
+print("Algorithm: 3, 1, 4, 5, 2, 6")
 kable(x = mt.comparison.df, format = 'rst')
 
 
