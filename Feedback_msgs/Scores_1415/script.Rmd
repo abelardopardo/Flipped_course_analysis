@@ -8,20 +8,10 @@ output: html_document
 ```{r setup, echo = FALSE, results = 'hide', messages = FALSE, warning = FALSE}
 library(ggplot2)
 library(plyr)
+require(effsize, quietly = TRUE)
+options(digits = 2, scipen = 1)
 
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-
-cohens_d <- function(x, y) {
-  lx <- length(x)- 1
-  ly <- length(y)- 1
-  md  <- abs(mean(x) - mean(y))        ## mean difference (numerator)
-  csd <- lx * var(x) + ly * var(y)
-  csd <- csd/(lx + ly)
-  csd <- sqrt(csd)                     ## common sd computation
-  
-  cd  <- md/csd                        ## cohen's d
-  return(cd)
-}
 
 # Multiple plot function
 #
@@ -73,9 +63,9 @@ multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
 Compare Midterm Scores for 2014 and 2015
 =========================================
 
-```{r}
-data <- read.csv('scores.csv', header = TRUE, sep = ",")
-summary(data)
+```{r, echo = FALSE}
+data <- read.csv('../Data_files/scores.csv', header = TRUE, sep = ",")
+# summary(data)
 
 midterm_14 <- data[!is.na(data$X2014_MD),c('X2014_MD')]
 final_mcq_14 <- data[!is.na(data$X2014.FMCQ),c('X2014.FMCQ')]
@@ -102,15 +92,19 @@ final_15 <- final_mcq_15 + final_q1_15 + final_q2_15 + final_q4_15
 # 
 t.test(midterm_14, midterm_15, alternative = 'less')
 wilcox.test(midterm_14, midterm_15, alternative = 'less')
-cd_midterm <- cohens_d(midterm_14, midterm_15)
+cd_midterm <- cohen.d(midterm_14, midterm_15, hedges.correction = TRUE)
 cd_midterm
+```
 
+FIXING!!! An independent-samples t-test was conducted to compare the rating of feedback in the two editions of the course. There was a significant difference in the rating of feedback between the answers received in the 2014 edition (M=`r mean(q8_14)`, SD=`r sd(q8_14)`) and the 2015 edition (M=`r mean(q6_15)`, SD=`r sd(q6_15)`); t(`r result$parameter`) = `r result$statistic`, p = `r result$p.value`, Cohen's d = `r cd$estimate`. These results suggest that the treatment in the second edition had a medium positive effect on how students perceived feedback.
+
+```{r}
 #
 # T.test for final score
 # 
 t.test(final_14, final_15, alternative = 'less')
 wilcox.test(final_14, final_15, alternative = 'less')
-cd_final <- cohens_d(final_14, final_15)
+cd_final <- cohen.d(final_14, final_15, hedges.correction = TRUE)
 cd_final
 #
 # Plot them: http://www.cookbook-r.com/Graphs/Plotting_distributions_(ggplot2)/

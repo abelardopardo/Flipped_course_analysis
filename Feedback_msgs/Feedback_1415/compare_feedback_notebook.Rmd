@@ -2,7 +2,8 @@
 title: "Comparison of student perception of feedback 2013 - 2015"
 author: "Abelardo Pardo"
 date: "7 December 2015"
-output: word_document
+output:
+  html_document: default
 ---
 
 ```{r setup, echo = FALSE, results = 'hide', messages = FALSE, warning = FALSE}
@@ -21,8 +22,7 @@ Feedback 2013
 #
 # Slurp the 2013 data
 #
-#setwd("~/Courses/Arduino/ELEC1601/Admin/USE/2013")
-df13 = read.csv("2013_1601_raw_data.csv", header = TRUE)
+df13 = read.csv("../Data_files/2013_1601_raw_data.csv", header = TRUE)
 q8_13 <- df13$q8[is.na(df13$q8) == FALSE] # Remove NA
 barplot(prop.table(table(q8_13)))
 ```
@@ -34,7 +34,7 @@ Feedback 2014
 # Slurp the 2014 data
 #
 #setwd("~/Courses/Arduino/ELEC1601/Admin/USE/2014")
-df14 = read.xls("2014_detailed_data.xlsx", sheet = 1, header = TRUE)
+df14 = read.xls("../Data_files/2014_detailed_data.xlsx", sheet = 1, header = TRUE)
 q8_14 <- df14$Q8[1:205]    # Remove the bottom columns with the summary
 q8_14 <- q8_14[is.na(q8_14) == FALSE] # Remove NA
 barplot(prop.table(table(q8_14)))
@@ -45,7 +45,7 @@ barplot(prop.table(table(q8_14)))
 # Slurp the 2015 data
 #
 #setwd("~/Courses/Arduino/ELEC1601/Admin/USE/2015")
-df15 = read.xls("2015_1601_raw_data.xlsx", sheet = 2, header = TRUE)
+df15 = read.xls("../Data_files/2015_1601_raw_data.xlsx", sheet = 2, header = TRUE)
 q6_15 <- df15$q6[1:207]    # Remove the bottom columns with the summary
 q6_15 <- q6_15[is.na(q6_15) == FALSE] # Remove NA
 ```
@@ -124,8 +124,8 @@ cd <- cohen.d(q6_15, q8_14, hedges.correction = TRUE)
 
 An independent-samples t-test was conducted to compare the rating of feedback in the two editions of the course. There was a significant difference in the rating of feedback between the answers received in the 2014 edition (M=`r mean(q8_14)`, SD=`r sd(q8_14)`) and the 2015 edition (M=`r mean(q6_15)`, SD=`r sd(q6_15)`); t(`r result$parameter`) = `r result$statistic`, p = `r result$p.value`, Cohen's d = `r cd$estimate`. These results suggest that the treatment in the second edition had a medium positive effect on how students perceived feedback.
 
-ANOVA: Using the year as the factor that distinguishes the result
-=================================================================
+ANOVA: Using the year as the factor that affects satisfaction
+=============================================================
 
 ```{r, echo = FALSE}
 # http://statistics-help-for-students.com/How_do_I_report_a_1_way_between_subjects_ANOVA_in_APA_style.htm
