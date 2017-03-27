@@ -57,6 +57,37 @@ summary.stats <- function(feature.set, clusters, cl.number) {
   sum.stats.transpose
   
 }
+
+## very similar to the summary.stats f. 
+## the difference is that instead of the median and the quartiles, the f. computes
+## mean and st. deviation, since variables are normally distributed
+summary.stats2 <- function(feature.set, clusters) {
+  sum.stats <- aggregate(x = feature.set, 
+                         by = list(clusters), 
+                         FUN = function(x) { 
+                           m <- mean(x, na.rm = T)
+                           std <- sd(x, na.rm = T) 
+                           paste(round(m, digits = 2), " (", 
+                                 round(std, digits = 2), ")", sep = "")
+                         })
+  sum.stat.df <- data.frame(cluster = sum.stats[,1], 
+                            freq = as.vector(table(clusters)),
+                            sum.stats[,-1])
+  
+  sum.stats.transpose <- t( as.matrix(sum.stat.df) )
+  sum.stats.transpose <- as.data.frame(sum.stats.transpose)
+  attributes <- rownames(sum.stats.transpose)
+  sum.stats.transpose <- as.data.frame( cbind(attributes, sum.stats.transpose) )
+  cl.number <- length(unique(clusters))
+  colnames(sum.stats.transpose) <- c( "attributes", rep("Mean (SD)", cl.number) )
+  rownames(sum.stats.transpose) <- NULL
+  
+  sum.stats.transpose
+  
+}
+
+
+
 ################################################################################
 ## UTILITY FUNCTIONS REQUIRED FOR COMPARISONS OF STUDENT GROUPS/CLASSES/CLUSTERS
 ################################################################################
@@ -126,12 +157,16 @@ apply.FDR.correction <- function(results.df) {
   alpha <- 0.05
   n.results <- nrow(results.df)
   results.df$significant <- vector(length = n.results)
+  results.df$alpha <- vector(length = n.results)
   for (i in 1:n.results) {
-    if ( results.df$p[i] <= (i/n.results)*alpha ) 
+    alpha.adjusted <- (i/n.results)*alpha 
+    if ( results.df$p[i] <=  alpha.adjusted ) { 
       results.df$significant[i] <- 'YES'
-    else {
+      results.df$alpha[i] <- alpha.adjusted
+    } else {
       for (j in i:n.results) {
         results.df$significant[j] <- 'NO'
+        results.df$alpha[j] <- (j/n.results)*alpha
       }
       break
     }
@@ -139,3 +174,15 @@ apply.FDR.correction <- function(results.df) {
   results.df
 }
 
+## compute Cohen's D (effect size) for t-test
+## http://stackoverflow.com/questions/15436702/estimate-cohens-d-for-effect-size
+cohens_d <- function(x, y) {
+  lx <- length(x)- 1
+  ly <- length(y)- 1
+  md  <- abs(mean(x) - mean(y))        ## mean difference (numerator)
+  csd <- lx * var(x) + ly * var(y)
+  csd <- csd/(lx + ly)
+  csd <- sqrt(csd)                     ## common sd computation
+  
+  cd  <- md/csd                        ## cohen's d
+}

@@ -34,8 +34,11 @@ require('knitr')
 kable(x = stats.w2, format = "rst")
 
 # add clusters to the feature set
-f.w3 <- as.data.frame( cbind(f.w2, cluster = cutree(hc.w2, k=5)))
+f.w2 <- as.data.frame( cbind(f.w2, cluster = cutree(hc.w2, k=5)))
 str(f.w2)
+# store the week's feature values and clusters
+write.csv(f.w2, file = "results/weekly_clusters/week2.csv", quote = F, row.names = F)
+
 
 ## WEEK 3
 f.w3 <- create.new.feature.set(course_week = 3,
@@ -62,6 +65,8 @@ kable(x = stats.w3, format = "rst")
 
 # add clusters to the feature set
 f.w3 <- as.data.frame( cbind(f.w3, cluster = cutree(hc.w3, k=4)))
+# store the week's feature values and clusters
+write.csv(f.w3, file = "results/weekly_clusters/week3.csv", quote = F, row.names = F)
 
 ## WEEK 4
 f.w4 <- create.new.feature.set(course_week = 4,
@@ -92,6 +97,9 @@ kable(x = stats.w4, format = "rst")
 
 # add clusters to the feature set
 f.w4 <- as.data.frame( cbind(f.w4, cluster = cutree(hc.w4, k=5)))
+# store the week's feature values and clusters
+write.csv(f.w4, file = "results/weekly_clusters/week4.csv", quote = F, row.names = F)
+
 
 ## WEEK 5
 f.w5 <- create.new.feature.set(course_week = 5,
@@ -120,6 +128,9 @@ kable(x = stats.w5, format = "rst")
 
 # add clusters to the feature set
 f.w5 <- as.data.frame( cbind(f.w5, cluster = cutree(hc.w5, k=4)))
+# store the week's feature values and clusters
+write.csv(f.w5, file = "results/weekly_clusters/week5.csv", quote = F, row.names = F)
+
 
 ## WEEK 6 (the last week before midterm)
 f.w6 <- create.new.feature.set(course_week = 6,
@@ -142,6 +153,8 @@ kable(x = stats.w6, format = "rst")
 
 # add clusters to the feature set
 f.w6 <- as.data.frame( cbind(f.w6, cluster = cutree(hc.w6, k=5)))
+# store the week's feature values and clusters
+write.csv(f.w6, file = "results/weekly_clusters/week6.csv", quote = F, row.names = F)
 
 
 #################################################################
@@ -169,6 +182,9 @@ kable(x = stats.w7, format = "rst")
 # add clusters to the feature set
 f.w7 <- as.data.frame( cbind(f.w7, cluster = cutree(hc.w7, k=4)))
 str(f.w7)
+# store the week's feature values and clusters
+write.csv(f.w7, file = "results/weekly_clusters/week7.csv", quote = F, row.names = F)
+
 
 ## WEEK 8 
 f.w8 <- create.new.feature.set(course_week = 8,
@@ -190,7 +206,8 @@ kable(x = stats.w8, format = "rst")
 
 # add clusters to the feature set
 f.w8 <- as.data.frame( cbind(f.w8, cluster = cutree(hc.w8, k=5)))
-str(f.w8)
+# store the week's feature values and clusters
+write.csv(f.w8, file = "results/weekly_clusters/week8.csv", quote = F, row.names = F)
 
 ## WEEK 9
 f.w9 <- create.new.feature.set(course_week = 9,
@@ -212,7 +229,8 @@ kable(x = stats.w9, format = "rst")
 
 # add clusters to the feature set
 f.w9 <- as.data.frame( cbind(f.w9, cluster = cutree(hc.w9, k=4)))
-str(f.w9)
+# store the week's feature values and clusters
+write.csv(f.w9, file = "results/weekly_clusters/week9.csv", quote = F, row.names = F)
 
 ## WEEK 10
 f.w10 <- create.new.feature.set(course_week = 10,
@@ -234,7 +252,8 @@ kable(x = stats.w10, format = "rst")
 
 # add clusters to the feature set
 f.w10 <- as.data.frame( cbind(f.w10, cluster = cutree(hc.w10, k=5)))
-str(f.w10)
+# store the week's feature values and clusters
+write.csv(f.w10, file = "results/weekly_clusters/week10.csv", quote = F, row.names = F)
 
 ## WEEK 11
 f.w11 <- create.new.feature.set(course_week = 11,
@@ -256,7 +275,8 @@ kable(x = stats.w11, format = "rst")
 
 # add clusters to the feature set
 f.w11 <- as.data.frame( cbind(f.w11, cluster = cutree(hc.w11, k=4)))
-str(f.w11)
+# store the week's feature values and clusters
+write.csv(f.w11, file = "results/weekly_clusters/week11.csv", quote = F, row.names = F)
 
 
 ## WEEK 12
@@ -279,7 +299,8 @@ kable(x = stats.w12, format = "rst")
 
 # add clusters to the feature set
 f.w12 <- as.data.frame( cbind(f.w12, cluster = cutree(hc.w12, k=4)))
-str(f.w12)
+# store the week's feature values and clusters
+write.csv(f.w12, file = "results/weekly_clusters/week12.csv", quote = F, row.names = F)
 
 ## WEEK 13
 f.w13 <- create.new.feature.set(course_week = 13,
@@ -301,7 +322,8 @@ kable(x = stats.w13, format = "rst")
 
 # add clusters to the feature set
 f.w13 <- as.data.frame( cbind(f.w13, cluster = cutree(hc.w13, k=5)))
-str(f.w13)
+# store the week's feature values and clusters
+write.csv(f.w13, file = "results/weekly_clusters/week13.csv", quote = F, row.names = F)
 
 
 ##################################################
@@ -357,65 +379,6 @@ write.csv(x = trace.w213, file = "Intermediate_files/original_weekly_clusters_w2
           row.names = F, quote = F)
 
 
-##############################################################
-## USE LCA TO GROUP STUDENTS BASED ON THE PATHS THEY FOLLOWED 
-## THROUGHOUT THE COURSE (WEEKS 2-13)
-##############################################################
-
-clusters.w213 <- read.csv(file = "Intermediate_files/original_weekly_clusters_w2_to_w13_(feb2016).csv")  
-
-f.fullcourse <- cbind(cl.w2, cl.w3, cl.w4, cl.w5, cl.w6, cl.w7, cl.w8, 
-                      cl.w9, cl.w10, cl.w11, cl.w12, cl.w13) ~ 1
-
-eval.metrics <- data.frame()
-require(poLCA)
-set.seed(3003)
-for(i in 3:7) {
-  lc <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, nclass = i, verbose = F, na.rm = F)
-  metrics <- c(i, lc$aic, lc$bic, lc$llik, lc$Chisq)
-  eval.metrics <- as.data.frame( rbind(eval.metrics, metrics) )
-}
-colnames(eval.metrics) <- c('nclass', 'AIC', 'BIC', 'LogLike', 'ChiSquare')
-require(knitr)
-kable(x = eval.metrics, format = "rst")
-
-require(poLCA)
-set.seed(3003)
-## examine the model with 5 classes
-# lc5.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, 
-#                         nclass = 5, graphs = T, na.rm = F)
-# # order the latent classes based on their size ($P gives the size each latent class)
-# probs.start <- poLCA.reorder(lc5.fullcourse$probs.start, order(lc5.fullcourse$P,decreasing=T))
-# lc5.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, graphs = T, 
-#                         nclass = 5, probs.start = probs.start, na.rm = F)
-
-## examine the model with 4 classes
-# lc4.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, 
-#                         nclass = 4, graphs = T, na.rm = F)
-# probs.start <- poLCA.reorder(lc4.fullcourse$probs.start, order(lc4.fullcourse$P,decreasing=T))
-# lc4.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, graphs = T, 
-#                         nclass = 4, probs.start = probs.start, na.rm = F)
-
-## examine the model with 6 classes
-lc6.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, nrep = 50, 
-                        nclass = 6, na.rm = F)
-probs.start <- poLCA.reorder(lc6.fullcourse$probs.start, order(lc6.fullcourse$P,decreasing=T))
-lc6.fullcourse <- poLCA(f.fullcourse, data = clusters.w213, graphs = T, 
-                        nclass = 6, probs.start = probs.start, na.rm = F)
-
-
-## add the predicted class to each observation
-clusters.w213.pred <- clusters.w213
-# clusters.w213.pred$lca5 <- as.factor(lc5.fullcourse$predclass)
-# clusters.w213.pred$lca4 <- as.factor(lc4.fullcourse$predclass)
-clusters.w213.pred$lca6 <- as.factor(lc6.fullcourse$predclass)
-str(clusters.w213.pred)
-
-## write the features + the LCA class values to a file
-write.csv(x = clusters.w213.pred, file = "results/lca_w2_to_w13_6classes(April2016).csv", 
-          row.names = F, quote = F)
-
-
 #############################################################################
 ## MAP THE ORIGINAL CLUSTERS INTO THE DEVISED 'COMPACT' CLUSTER CODING SCHEME 
 ## 
@@ -430,182 +393,182 @@ write.csv(x = clusters.w213.pred, file = "results/lca_w2_to_w13_6classes(April20
 ## SEQUENCE ANALYSIS IS DONE USING TraMineR PACKAGE 
 #############################################################################
 
-orig.cl.w213 <- read.csv(file = "Intermediate_files/original_weekly_clusters_w2_to_w13_(feb2016).csv")  
-n.users <- nrow(orig.cl.w213)
-
-## cluster codes in the 'compact' coding scheme
-compact.codes <- c('HA_BAL', 'HA_BAL_MC', 'HA_NEG_DIFF_MC',
-                   'A_POS_DIFF', 'A_NEG_DIFF',
-                   'MA_ALL_ACT_BAL', 'MA_MANY_ACT_BAL_MC',
-                   'SAS_ONLY_BAL', 'SAS_ONLY_NEG_DIFF',
-                   'SAS_MOSTLY_NEG-DIFF',
-                   'DISENGAGED')
-
-## do the mapping for week 2
-new.cl.w2 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w2[i]
-  if ( is.na(orig.cl) ) { 
-    new.cl.w2[i] <- NA
-    next
-  }
-  if ( orig.cl == 1 ) new.cl.w2[i] <- 'DISENGAGED'
-  else if ( orig.cl %in% c(2,3) ) new.cl.w2[i] <- 'A_POS_DIFF'
-  else if (orig.cl == 4) new.cl.w2[i] <- 'SAS_ONLY_BAL'
-  else new.cl.w2[i] <- 'MA_ALL_ACT_BAL'
-}
-
-## do the mapping for week 3
-new.cl.w3 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w3[i]
-  if ( is.na(orig.cl) ) { 
-    new.cl.w3[i] <- NA
-    next
-  }
-  if ( orig.cl == 1 ) new.cl.w3[i] <- 'SAS_MOSTLY_NEG_DIFF'
-  else if ( orig.cl == 2 ) new.cl.w3[i] <- 'HA_NEG_DIFF_MC'
-  else if ( orig.cl == 3 ) new.cl.w3[i] <- 'A_NEG_DIFF'
-  else if ( orig.cl == 4 ) new.cl.w3[i] <- 'SAS_ONLY_NEG_DIFF'
-  else new.cl.w3[i] <- 'DISENGAGED'
-}
-
-## do the mapping for week 4
-new.cl.w4 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w4[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w4[i] <- NA
-  else
-    new.cl.w4[i] <- switch(orig.cl, "HA_BAL_MC", "A_NEG_DIFF", 
-                         "SAS_ONLY_NEG_DIFF", "SAS_MOSTLY_NEG_DIFF", "DISENGAGED")
-}  
-table(new.cl.w4)
-
-## do the mapping for week 5
-new.cl.w5 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w5[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w5[i] <- NA
-  else
-    new.cl.w5[i] <- switch(orig.cl, "MA_ALL_ACT_BAL", "SAS_ONLY_NEG_DIFF", 
-                         "HA_NEG_DIFF_MC", "SAS_ONLY_BAL" )
-} 
-table(new.cl.w5)
-
-## do the mapping for week 6
-new.cl.w6 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w6[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w6[i] <- NA
-  else new.cl.w6[i] <- switch(orig.cl, "A_POS_DIFF", "MA_MANY_ACT_BAL_MC", "DISENGAGED",
-                         "HA_BAL_MC", "HA_BAL")
-} 
-table(new.cl.w6)
-
-
-## do the mapping for week 7
-new.cl.w7 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w7[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w7[i] <- NA
-  else 
-    new.cl.w7[i] <- switch(orig.cl, "A_NEG_DIFF", "SAS_ONLY_NEG_DIFF", "SAS_ONLY_BAL",
-                         "MA_MANY_ACT_BAL_MC")
-} 
-table(new.cl.w7)
-
-
-## do the mapping for week 8
-new.cl.w8 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w8[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w8[i] <- NA
-  else 
-    new.cl.w8[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "MA_ALL_ACT_BAL", "SAS_MOSTLY_NEG_DIFF",
-                         "SAS_ONLY_BAL", "SAS_ONLY_NEG_DIFF")
-} 
-table(new.cl.w8)
-
-
-## do the mapping for week 9
-new.cl.w9 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w9[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w9[i] <- NA
-  else 
-    new.cl.w9[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "A_NEG_DIFF", "HA_NEG_DIFF_MC", 
-                         "SAS_ONLY_NEG_DIFF")
-} 
-table(new.cl.w9)
-
-
-## do the mapping for week 10
-new.cl.w10 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w10[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w10[i] <- NA
-  else 
-    new.cl.w10[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "DISENGAGED", "MA_ALL_ACT_BAL", 
-                         "HA_NEG_DIFF_MC", "SAS_ONLY_NEG_DIFF")
-} 
-table(new.cl.w10)
-
-
-## do the mapping for week 11
-new.cl.w11 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w11[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w11[i] <- NA
-  else 
-    new.cl.w11[i] <- switch(orig.cl, "A_NEG_DIFF", "SAS_ONLY_NEG_DIFF", 
-                          "SAS_ONLY_NEG_DIFF", "SAS_ONLY_BAL")
-} 
-table(new.cl.w11)
-
-
-## do the mapping for week 12
-new.cl.w12 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w12[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w12[i] <- NA
-  else 
-    new.cl.w12[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "MA_ALL_ACT_BAL", "SAS_ONLY_BAL",
-                          "SAS_ONLY_NEG_DIFF")
-} 
-table(new.cl.w12)
-
-
-## do the mapping for week 13
-new.cl.w13 <- factor(compact.codes)
-for (i in 1:n.users) {
-  orig.cl <- orig.cl.w213$cl.w13[i]
-  if ( is.na(orig.cl) ) 
-    new.cl.w13[i] <- NA
-  else 
-    new.cl.w13[i] <- switch(orig.cl, "SAS_ONLY_BAL", "A_POS_DIFF", "HA_BAL",
-                          "A_POS_DIFF", "HA_BAL")
-} 
-table(new.cl.w13)
-
-
-## create a new df with the compact cluster coding scheme
-compact.clusters <- data.frame(user_id=orig.cl.w213$user_id,
-                               new.cl.w2, new.cl.w3, new.cl.w4, new.cl.w5, new.cl.w6,
-                               new.cl.w7, new.cl.w8, new.cl.w9, new.cl.w10, new.cl.w11,
-                               new.cl.w12, new.cl.w13)
-str(compact.clusters)
-
-## store the compact clusters in an .rdata file to preserve all the levels of the factor vars
-## (saving to .csv would not do that)
-save(compact.clusters, file = "Intermediate_files/compact_clusters_w2_to_w13_(feb2016).RData")
-
-
+# orig.cl.w213 <- read.csv(file = "Intermediate_files/original_weekly_clusters_w2_to_w13_(feb2016).csv")  
+# n.users <- nrow(orig.cl.w213)
+# 
+# ## cluster codes in the 'compact' coding scheme
+# compact.codes <- c('HA_BAL', 'HA_BAL_MC', 'HA_NEG_DIFF_MC',
+#                    'A_POS_DIFF', 'A_NEG_DIFF',
+#                    'MA_ALL_ACT_BAL', 'MA_MANY_ACT_BAL_MC',
+#                    'SAS_ONLY_BAL', 'SAS_ONLY_NEG_DIFF',
+#                    'SAS_MOSTLY_NEG-DIFF',
+#                    'DISENGAGED')
+# 
+# ## do the mapping for week 2
+# new.cl.w2 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w2[i]
+#   if ( is.na(orig.cl) ) { 
+#     new.cl.w2[i] <- NA
+#     next
+#   }
+#   if ( orig.cl == 1 ) new.cl.w2[i] <- 'DISENGAGED'
+#   else if ( orig.cl %in% c(2,3) ) new.cl.w2[i] <- 'A_POS_DIFF'
+#   else if (orig.cl == 4) new.cl.w2[i] <- 'SAS_ONLY_BAL'
+#   else new.cl.w2[i] <- 'MA_ALL_ACT_BAL'
+# }
+# 
+# ## do the mapping for week 3
+# new.cl.w3 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w3[i]
+#   if ( is.na(orig.cl) ) { 
+#     new.cl.w3[i] <- NA
+#     next
+#   }
+#   if ( orig.cl == 1 ) new.cl.w3[i] <- 'SAS_MOSTLY_NEG_DIFF'
+#   else if ( orig.cl == 2 ) new.cl.w3[i] <- 'HA_NEG_DIFF_MC'
+#   else if ( orig.cl == 3 ) new.cl.w3[i] <- 'A_NEG_DIFF'
+#   else if ( orig.cl == 4 ) new.cl.w3[i] <- 'SAS_ONLY_NEG_DIFF'
+#   else new.cl.w3[i] <- 'DISENGAGED'
+# }
+# 
+# ## do the mapping for week 4
+# new.cl.w4 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w4[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w4[i] <- NA
+#   else
+#     new.cl.w4[i] <- switch(orig.cl, "HA_BAL_MC", "A_NEG_DIFF", 
+#                            "SAS_ONLY_NEG_DIFF", "SAS_MOSTLY_NEG_DIFF", "DISENGAGED")
+# }  
+# table(new.cl.w4)
+# 
+# ## do the mapping for week 5
+# new.cl.w5 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w5[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w5[i] <- NA
+#   else
+#     new.cl.w5[i] <- switch(orig.cl, "MA_ALL_ACT_BAL", "SAS_ONLY_NEG_DIFF", 
+#                            "HA_NEG_DIFF_MC", "SAS_ONLY_BAL" )
+# } 
+# table(new.cl.w5)
+# 
+# ## do the mapping for week 6
+# new.cl.w6 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w6[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w6[i] <- NA
+#   else new.cl.w6[i] <- switch(orig.cl, "A_POS_DIFF", "MA_MANY_ACT_BAL_MC", "DISENGAGED",
+#                               "HA_BAL_MC", "HA_BAL")
+# } 
+# table(new.cl.w6)
+# 
+# 
+# ## do the mapping for week 7
+# new.cl.w7 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w7[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w7[i] <- NA
+#   else 
+#     new.cl.w7[i] <- switch(orig.cl, "A_NEG_DIFF", "SAS_ONLY_NEG_DIFF", "SAS_ONLY_BAL",
+#                            "MA_MANY_ACT_BAL_MC")
+# } 
+# table(new.cl.w7)
+# 
+# 
+# ## do the mapping for week 8
+# new.cl.w8 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w8[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w8[i] <- NA
+#   else 
+#     new.cl.w8[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "MA_ALL_ACT_BAL", "SAS_MOSTLY_NEG_DIFF",
+#                            "SAS_ONLY_BAL", "SAS_ONLY_NEG_DIFF")
+# } 
+# table(new.cl.w8)
+# 
+# 
+# ## do the mapping for week 9
+# new.cl.w9 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w9[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w9[i] <- NA
+#   else 
+#     new.cl.w9[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "A_NEG_DIFF", "HA_NEG_DIFF_MC", 
+#                            "SAS_ONLY_NEG_DIFF")
+# } 
+# table(new.cl.w9)
+# 
+# 
+# ## do the mapping for week 10
+# new.cl.w10 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w10[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w10[i] <- NA
+#   else 
+#     new.cl.w10[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "DISENGAGED", "MA_ALL_ACT_BAL", 
+#                             "HA_NEG_DIFF_MC", "SAS_ONLY_NEG_DIFF")
+# } 
+# table(new.cl.w10)
+# 
+# 
+# ## do the mapping for week 11
+# new.cl.w11 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w11[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w11[i] <- NA
+#   else 
+#     new.cl.w11[i] <- switch(orig.cl, "A_NEG_DIFF", "SAS_ONLY_NEG_DIFF", 
+#                             "SAS_ONLY_NEG_DIFF", "SAS_ONLY_BAL")
+# } 
+# table(new.cl.w11)
+# 
+# 
+# ## do the mapping for week 12
+# new.cl.w12 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w12[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w12[i] <- NA
+#   else 
+#     new.cl.w12[i] <- switch(orig.cl, "SAS_ONLY_NEG_DIFF", "MA_ALL_ACT_BAL", "SAS_ONLY_BAL",
+#                             "SAS_ONLY_NEG_DIFF")
+# } 
+# table(new.cl.w12)
+# 
+# 
+# ## do the mapping for week 13
+# new.cl.w13 <- factor(compact.codes)
+# for (i in 1:n.users) {
+#   orig.cl <- orig.cl.w213$cl.w13[i]
+#   if ( is.na(orig.cl) ) 
+#     new.cl.w13[i] <- NA
+#   else 
+#     new.cl.w13[i] <- switch(orig.cl, "SAS_ONLY_BAL", "A_POS_DIFF", "HA_BAL",
+#                             "A_POS_DIFF", "HA_BAL")
+# } 
+# table(new.cl.w13)
+# 
+# 
+# ## create a new df with the compact cluster coding scheme
+# compact.clusters <- data.frame(user_id=orig.cl.w213$user_id,
+#                                new.cl.w2, new.cl.w3, new.cl.w4, new.cl.w5, new.cl.w6,
+#                                new.cl.w7, new.cl.w8, new.cl.w9, new.cl.w10, new.cl.w11,
+#                                new.cl.w12, new.cl.w13)
+# str(compact.clusters)
+# 
+# ## store the compact clusters in an .rdata file to preserve all the levels of the factor vars
+# ## (saving to .csv would not do that)
+# save(compact.clusters, file = "Intermediate_files/compact_clusters_w2_to_w13_(feb2016).RData")
+# 
+# 

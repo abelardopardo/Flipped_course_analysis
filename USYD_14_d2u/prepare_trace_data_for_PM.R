@@ -32,7 +32,7 @@ filtered.events <- filtered.events[-to.remove,]
 ## f. for transforming the payload value of the embedded-video action 
 ## into a vector of two elements the payload consists of
 video.payload.split <- function(x) { 
-  temp <- gsub("\\{\"(\\w+)\":\"(\\w+)\"\\}", "\\1 \\2", x)
+  temp <- gsub("\\{\"(\\w+)\":\"(.+)\"\\}", "\\1 \\2", x)
   result <- strsplit(temp, " ") 
   result[[1]]
 }
@@ -51,7 +51,7 @@ for (i in 1:nrow(video.events)) {
 }
 ## remove observations with indices in indices.to.remove
 indices.to.remove <- as.integer(indices.to.remove)
-filtered.events <- filtered.events[-indices.to.remove,]
+filtered.events <- filtered.events[ !(row.names(filtered.events) %in% indices.to.remove), ]
 
 
 #################################################################################
@@ -168,11 +168,12 @@ for (i in 1:nrow(target.trace)) {
 }
 
 ## keep only the columns/variables that are needed
-target.trace <- target.trace[,c(1,2,4,7)]
-## change the order of columns, to have:
-## CASE_ID, ACTIVITY_NAME, TIMESTAMP, WEEK
+target.trace <- target.trace[,c(1,2,4,5,7)]
 str(target.trace)
-target.trace <- target.trace[,c(2,4,1,3)]
+colnames(target.trace)[3:4] <- c("WEEK", "TOPIC")
+## change the order of columns, to have:
+## CASE_ID, ACTIVITY_NAME, TIMESTAMP, WEEK, TOPIC
+target.trace <- target.trace[,c(2,5,1,3,4)]
 ## store the generated trace data
 write.csv(target.trace, file = "Intermediate_files/trace_data_w0-16.csv", row.names = F)
 
@@ -192,7 +193,7 @@ str(target.trace)
 target.trace$TIMESTAMP <- as.POSIXct(target.trace$TIMESTAMP)
 
 ## rename the colums to prevent confusion
-colnames(target.trace) <- c('user_id', 'activity', 'timestamp', 'week')
+colnames(target.trace) <- c('user_id', 'activity', 'timestamp', 'week', 'topic')
 str(target.trace)
 
 ## order the trace data first based on the user_id, then based on the timestamp
@@ -221,31 +222,37 @@ for (i in 1:(nrow(target.trace)-1)) {
   target.trace$session_id[i+1] <- s  
 }
 
+## rename the columns
+colnames(target.trace) <- c('RESOURCE_ID', 'ACTIVITY', 'TIMESTAMP','WEEK','TOPIC', 'CASE_ID')
+## change the order of the columns
+target.trace <- target.trace[,c(6,1,3,2,4,5)]
+## write to a file
+write.csv(target.trace, file = "Intermediate_files/trace_data_with_sessions_w0-16.csv",
+          quote = F, row.names = F)
+
+
 ## filter out sessions that consists of only one event
 one.event.sessions <- vector()
 event.count <- 1
 j <- 1
 for(i in 1:(nrow(target.trace)-1)) {
-  if ( target.trace$session_id[i] == target.trace$session_id[i+1] )
+  if ( target.trace$CASE_ID[i] == target.trace$CASE_ID[i+1] )
     event.count <- event.count + 1
   else {
     if ( event.count == 1 ) {
-      one.event.sessions[j] <- target.trace$session_id[i]
+      one.event.sessions[j] <- target.trace$CASE_ID[i]
       j <- j + 1
     }
     event.count <- 1
   }
 }
 
-filtered.traces <- target.trace[!(target.trace$session_id %in% one.event.sessions), ]
+filtered.traces <- target.trace[!(target.trace$CASE_ID %in% one.event.sessions), ]
 
-## rename the columns
-colnames(filtered.traces) <- c('RESOURCE_ID', 'TIMESTAMP', 'ACTIVITY', 'WEEK', 'CASE_ID')
-## change the order of the columns
-filtered.traces <- filtered.traces[,c(5,3,2,1,4)]
-## write to a file
-write.csv(filtered.traces, file = "Intermediate_files/trace_data_with_sessions_w0-16.csv",
+## write data without one-event sessions 
+write.csv(filtered.traces, file = "Intermediate_files/trace_data_with_sessions_(no-1-event)_w0-16.csv",
           quote = F, row.names = F)
+
 
 #######################################################################
 ## EXTRACT TRACE DATA ONLY FOR:
