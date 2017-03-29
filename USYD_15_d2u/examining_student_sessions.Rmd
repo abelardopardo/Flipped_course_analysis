@@ -88,7 +88,6 @@ Create a new data frame with multinomial variables as described above:
 ```{r}
 multinom.sdata <- sessions.df
 for(j in 2:13) {
-  ## q includes 25th perc, median, and 75th perc of session counts in week j 
   q <- quantile(x = sessions.df[,j], probs = c(0.25, 0.5, 0.75), names = F)
   multinom.sdata[,j][multinom.sdata[,j] > 0 & multinom.sdata[,j] <= q[1]] <- 1
   multinom.sdata[,j][multinom.sdata[,j] > q[1] & multinom.sdata[,j] <= q[2]] <- 2
@@ -96,7 +95,7 @@ for(j in 2:13) {
   multinom.sdata[,j][multinom.sdata[,j] > q[3]] <- 4
 } 
 
-multinom.sdata[,c(2:13)] <- as.data.frame(apply(multinom.sdata[,c(2:13)], 2, factor))
+#multinom.sdata[,c(2:13)] <- as.data.frame(apply(multinom.sdata[,c(2:13)], 2, factor))
 ```
  
 ```{r}
@@ -114,6 +113,10 @@ library(knitr)
 To determine the best value for the number of LCA classes, create models for different number of classes (2-7), and compute several statistical indicators (AIC, BIC, aBIC, cAIC) for each model
 
 ```{r}
+for(j in 2:13) {
+  multinom.sdata[,j] <- multinom.sdata[,j] + 1
+}
+
 weekly.sessions <- cbind(W2, W3, W4, W5, W6, W7, W8, W9, W10, W11, W12, W13) ~ 1
 
 eval.metrics <- data.frame()

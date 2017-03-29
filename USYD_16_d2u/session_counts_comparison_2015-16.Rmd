@@ -1,0 +1,145 @@
+---
+title: "R Notebook: Comparison of students' weekly session counts in 2015 and 2016 course installements"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+First, load the data about students weekly session counts for 2015 and 2016.
+```{r results='hide'}
+w.counts.2016 <- readRDS(file = "Intermediate_results/weekly_per_student_session_counts_2016.RData")
+str(w.counts.2016)
+
+w.counts.2015 <- readRDS(file = "Intermediate_results/weekly_per_student_session_counts_2015.RData")
+str(w.counts.2015)
+```
+
+The number of students differ: `r nrow(w.counts.2015)` in 2015, and `r nrow(w.counts.2016)` in 2016.
+
+Compute summary statistics for weekly session counts for 2015:
+```{r results='asis'}
+stats.2015 <- as.data.frame(apply(w.counts.2015[,c(2:13)], 2, 
+                                  function(x) {quantile(x, probs = c(0.25,0.5,0.75))}))
+row.names(stats.2015) <- c("25th_perc", "median", "75th_perc")
+require(knitr)
+kable(stats.2015)
+```
+
+The same statistics for 2016:
+```{r results='asis'}
+stats.2016 <- as.data.frame(apply(w.counts.2016[,c(2:13)], 2, 
+                                  function(x) {quantile(x, probs = c(0.25,0.5,0.75))}))
+row.names(stats.2016) <- c("25th_perc", "median", "75th_perc")
+kable(stats.2016)
+```
+
+Plot the summary stats for the two years:
+```{r}
+stats.2015.t <- as.data.frame(t(as.matrix(stats.2015)))
+stats.2016.t <- as.data.frame(t(as.matrix(stats.2016)))
+require(ggplot2)
+
+stats <- c("median", "25th perc.", "27th perc.")
+stats.plot <- ggplot() +
+    ylab("Session counts per student") + 
+    xlab("Weeks") +
+    ggtitle("Summary stats for 2015 (full line) and 2016 (dotdash line)") + theme_bw() +
+    scale_x_continuous(breaks = seq(2,13,1)) +
+    scale_shape_discrete(name="Summary stat.") +
+    geom_line(data=stats.2015.t, aes(x=c(2:13), y=median, colour=stats[1])) +
+    geom_line(data=stats.2015.t, aes(x=c(2:13), y=`25th_perc`, colour=stats[2])) +
+    geom_line(data=stats.2015.t, aes(x=c(2:13), y=`75th_perc`, colour=stats[3])) +
+    geom_line(data=stats.2016.t, aes(x=c(2:13), y=median, colour=stats[1]), linetype = 4) +
+    geom_line(data=stats.2016.t, aes(x=c(2:13), y=`25th_perc`, colour=stats[2]), linetype = 4) +
+    geom_line(data=stats.2016.t, aes(x=c(2:13), y=`75th_perc`, colour=stats[3]), linetype = 4)
+
+```
+
+```{r}
+stats.plot
+```
+
+It seems that - in absolute terms - weekly session counts in 2015 are higher than in 2016.
+
+## Comparison based on (aboslute values of) session counts
+
+to do the statistical tests, first check if the weekly counts are normally distributed.
+```{r results='hide'}
+apply(w.counts.2015[,c(2:13)], 2, shapiro.test)
+apply(w.counts.2016[,c(2:13)], 2, shapiro.test)
+```
+The Shapiro test showed that the variables (weekly counts) are not normally distributed, so, non-parametric test will be used.
+
+Using Mann-Whitney U test to do a pairwise comparison for each course week.
+```{r}
+do.Mann.Whitney.test <- function(counts1, counts2, year1, year2) {
+  require(coin)
+  g <- factor(c(rep(year1, length(counts1)), rep(year2, length(counts2))))
+  v <- c(counts1, counts2)
+  w <- wilcox_test(v ~ g)
+  z.value <- round(statistic(w)[[1]], digits = 4)
+  n <- length(counts1) + length(counts2)
+  r <- round(abs(z.value)/sqrt(n), digits = 4)
+  c(Z=z.value, p=round(pvalue(w), digits = 6), effect.size=r)
+}
+```
+
+```{r}
+comparison <- data.frame()
+for(j in 2:13) {
+  res <- do.Mann.Whitney.test(w.counts.2015[,j], w.counts.2016[,j], "2015", "2016")
+  comparison <- rbind(comparison, res)
+}
+colnames(comparison) <- c("Z", "p", "r")
+comparison$WEEK <- c(2:13)
+comparison <- comparison[,c(4,1:3)]
+```
+
+```{r results="asis"}
+require(knitr)
+kable(comparison)
+```
+When compared in aboslute terms, weekly session counts in 2015 are higher than in 2016. 
+
+## Comparison based on quartiles (of session counts)
+
+```{r results='hide'}
+percentiles.2015 <- w.counts.2015
+for(j in 2:13) {
+  q <- quantile(x = w.counts.2015[,j], probs = c(0.25, 0.5, 0.75), names = F)
+  percentiles.2015[,j][percentiles.2015[,j] <= q[1]] <- 1
+  percentiles.2015[,j][percentiles.2015[,j] > q[1] & percentiles.2015[,j] <= q[2]] <- 2
+  percentiles.2015[,j][percentiles.2015[,j] > q[2] & percentiles.2015[,j] <= q[3]] <- 3
+  percentiles.2015[,j][percentiles.2015[,j] > q[3]] <- 4
+}
+str(percentiles.2015)
+```
+
+```{r results='hide'}
+percentiles.2016 <- w.counts.2016
+for(j in 2:13) {
+  q <- quantile(x = w.counts.2016[,j], probs = c(0.25, 0.5, 0.75), names = F)
+  percentiles.2016[,j][percentiles.2016[,j] <= q[1]] <- 1
+  percentiles.2016[,j][percentiles.2016[,j] > q[1] & percentiles.2016[,j] <= q[2]] <- 2
+  percentiles.2016[,j][percentiles.2016[,j] > q[2] & percentiles.2016[,j] <= q[3]] <- 3
+  percentiles.2016[,j][percentiles.2016[,j] > q[3]] <- 4
+}
+str(percentiles.2016)
+```
+
+```{r results="asis"}
+perc.compare <- data.frame()
+for(j in 2:13) {
+  res <- do.Mann.Whitney.test(percentiles.2015[,j], percentiles.2016[,j], "2015", "2016")
+  perc.compare <- rbind(perc.compare, res)
+}
+colnames(perc.compare) <- c("Z", "p", "r")
+perc.compare$WEEK <- c(2:13)
+perc.compare <- perc.compare[,c(4,1:3)]
+require(knitr)
+kable(perc.compare)
+```
+
+The results show no statistically significant difference between 2015 nad 2016, excpet for the last week of the course (week 13).
