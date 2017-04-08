@@ -1,0 +1,918 @@
+---
+title: "Student clusters based on sequences of HMM states before and after midterm"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+The first part of the analysis consists of creating *2 Hidden Markov Models (HMMs)*, one for the first part of the course, and one for the 2nd part, where the midterm exam is used as the delimiter. So, the 1st part of the course includes weeks 2 to 5, whereas the 2nd lasts from week 7 to 12. Weeks 6 and 13 are not considered as those are the weeks when students prepare for the exams and their behaviour deviates from the regular study behaviour.
+
+For both HMMs student-session is used as the unit of analysis, that is, student learning actions are examined at the level of study sessions (instead of the week level as done previously). Study sessions are identified based on the time gap between consecutive learning actions.
+
+For each study session, the following features are computed:
+
+* FA_PERC - percentage (ratio) of formative assessment actions within the study session
+* FA_CO_PERC - percentage (or ratio) of correct formative assessment actions 
+* SA_PERC - percentage (ratio) of summative assessment actions within the study session 
+* SA_CO_PERC - percentage (or ratio) of correct summative assessment actions  
+* VID_PERC - percentage (ratio) of video play actions within the study session 
+* READ_PERC - percentage (ratio) of reading (content access) actions within the study session 
+* METACOG_PERC - percentage (ratio) of metacognitive (dashboard + orientation) actions within the study session
+
+## Loading and preparing the data
+
+```{r}
+# load the data
+traces <- readRDS(file = "Intermediate_results/study_mode_weeks2-13.RData")
+str(traces)
+
+# load the required functions
+source(file = "functions_for_analyzing_seq_of_HMM_states.R")
+```
+
+```{r}
+# remove traces originating from weeks 6 and 13
+selected.traces <- subset(traces, WEEK %in% c(2:5,7:12))
+# the last two columns are not needed, and can be removed
+selected.traces <- selected.traces[,c(1:7)]
+```
+By removing data from weeks 6 and 13, `r round(nrow(selected.traces)*100/nrow(traces), digits=2)`% of the initial traces (N=`r nrow(traces)`) are left for further analysis.  
+
+
+The distribution of events across the course weeks (weeks 6 and 13 have been removed):
+```{r}
+require(knitr)
+kable(t(table(selected.traces$WEEK)))
+```
+There is significantly higher level of activity in the weeks 2, 3, 4 and 5 than in the subsequent weeks.
+
+```{r include=FALSE}
+selected.traces$ACTION <- as.character(selected.traces$ACTION)
+## substitute DBOARD_ACCESS with MC_EVAL, and ORIENT with MC_ORIENT
+selected.traces$ACTION[selected.traces$ACTION=="DBOARD_ACCESS"] <- "MC_EVAL"
+selected.traces$ACTION[selected.traces$ACTION=="ORIENT"] <- "MC_ORIENT"
+
+## rename EQT_CO, VEQ_CO, and EXE_F_CO to FA_CO (FA = Formative Assessment), also
+## rename EQT_IN, VEQ_IN, and EXE_F_IN to FA_IN,
+## rename EQT_SR and VEQ_SR to FA_SR 
+selected.traces$ACTION[selected.traces$ACTION %in% c("EQT_CO", "VEQ_CO", "EXE_F_CO")] <- "FA_CO"
+selected.traces$ACTION[selected.traces$ACTION %in% c("EQT_IN", "VEQ_IN", "EXE_F_IN")] <- "FA_IN"
+selected.traces$ACTION[selected.traces$ACTION %in% c("EQT_SR", "VEQ_SR")] <- "FA_SR"
+
+## rename EXE_S_CO to SA_CO (SA = Summative Assessment), and EXE_S_IN to SA_IN
+selected.traces$ACTION[selected.traces$ACTION=="EXE_S_CO"] <- "SA_CO"
+selected.traces$ACTION[selected.traces$ACTION=="EXE_S_IN"] <- "SA_IN"
+```
+
+Counts and proportions of different kinds of learning actions:
+```{r}
+table(selected.traces$ACTION)
+round(prop.table(table(selected.traces$ACTION)), digits = 4)
+```
+
+```{r include=FALSE}
+## sort the data based on the 1) student, 2) week, 3) timestamp
+sorted.traces <- selected.traces[ with(selected.traces, order(STUDENT_ID, WEEK, TIMESTAMP)), ]
+
+## turn ACTION to factor variable
+sorted.traces$ACTION <- factor(sorted.traces$ACTION)
+```
+
+```{r}
+# re-examine the splitting of actions into sessions
+summary(sorted.traces$TIME_GAP)
+quantile(sorted.traces$TIME_GAP, probs = seq(0.9,1,0.01), na.rm = T)
+```
+Use the time gap of 21 min (~97th percentile) as the 'session delimiter'.
+Why 97th? 95th (8 min) and 96th (12 min) seem to be insufficiently long considering the length of videos, whereas 98th is overly long (62 min); furthermore, 21 min is the time gap used to delimit sessions in the 2014 dataset.
+
+```{r include=FALSE}
+## re-do the splitting of events into sessions, using 21 min gap between events 
+## as the session delimiter
+session.id <- 0
+for(i in 1:nrow(sorted.traces)) {
+  if ( is.na(sorted.traces$TIME_GAP[i]) || sorted.traces$TIME_GAP[i] >= 21 )
+    session.id <- session.id + 1
+  sorted.traces$SESSION_ID[i] <- session.id
+}
+```
+
+```{r include=FALSE}
+## compute the number of sessions
+n.sessions <- length(unique(sorted.traces$SESSION_ID))
+## and the number of students
+n.stud <- length(unique(sorted.traces$STUDENT_ID))
+```
+Using 21 min time gap between events as the session delimiter, the events of `r n.stud` students are split into `r n.sessions` study sessions.
+
+```{r include=FALSE}
+## store the data
+saveRDS(sorted.traces, file = "Intermediate_results/sorted_traces_with_sessions_weeks2-5_7-12.RData")
+```
+
+Remove students who do not have at least one session in each of the 2 time periods (weeks 2-5 and 7-12):
+```{r}
+traces.w2to5 <- subset(sorted.traces, WEEK %in% c(2:5))
+s.count.2to5 <- get.session.count(traces.w2to5)
+summary(s.count.2to5)
+sort(s.count.2to5)[1:20]
+```
+`r length(which(s.count.2to5==1))` student(s) with only 1 session in weeks 2-5.
+
+```{r}
+traces.w7to12 <- subset(sorted.traces, WEEK %in% c(7:12))
+s.count.7to12 <- get.session.count(traces.w7to12)
+summary(s.count.7to12)
+sort(s.count.7to12)[1:20]
+```
+`r length(which(s.count.7to12==1))` student(s) with only 1 session in weeks 7-12.
+
+Check for outliers:
+```{r}
+## check for outliers in weeks 2-5
+boxplot.stats(s.count.2to5)$out
+sort(s.count.2to5, decreasing = T)[1:20]
+extremes.w2to5 <- sort(s.count.2to5, decreasing = T)[1:2]
+```
+Several outliers in weeks 2-5, but only two extreme: `r extremes.w2to5`
+
+
+```{r}
+## check for outliers in weeks 7-12
+boxplot.stats(s.count.7to12)$out
+sort(s.count.7to12, decreasing = T)[1:20]
+extremes.w7to12 <- sort(s.count.7to12, decreasing = T)[1:2]
+```
+Also, several outliers in weeks 7-12, but only two extreme: `r extremes.w7to12`
+
+Apply a "light-weight" version of outliers removal - removing only "extreme" outliers. Also remove the student with only 1 session (in weeks 2-5):
+```{r include=FALSE}
+## identify the student with one session only
+one.session.stud <- unique(traces.w2to5$STUDENT_ID)[which(s.count.2to5 < 2)]
+## remove traces of the student with < 2 sesssion
+traces.w2to5 <- subset(traces.w2to5, STUDENT_ID != one.session.stud)
+
+## now, remove the extreme outliers
+## first, do the removal for weeks 2-5
+stud.to.remove <- unique(traces.w2to5$STUDENT_ID)[which(s.count.2to5 %in% extremes.w2to5)]
+traces.w2to5 <- subset(traces.w2to5, !(STUDENT_ID %in% stud.to.remove))
+## now, for the weeks 7-12
+stud.to.remove <- unique(traces.w7to12$STUDENT_ID)[which(s.count.7to12 %in% extremes.w7to12)]
+traces.w7to12 <- subset(traces.w7to12, !(STUDENT_ID %in% stud.to.remove))
+```
+
+Re-compute session counts (after the removal of extreme outliers)
+```{r}
+s.count.2to5 <- get.session.count(traces.w2to5)
+boxplot.stats(s.count.2to5)$out
+s.count.7to12 <- get.session.count(traces.w7to12)
+boxplot.stats(s.count.7to12)$out
+```
+Still several outliers, but will keep them for now.
+
+Keep only students who had sessions in both periods (2-5 and 7-12)
+```{r include=FALSE}
+stud.w2to5 <- unique(traces.w2to5$STUDENT_ID)
+stud.w7to12 <- unique(traces.w7to12$STUDENT_ID)
+stud.ids <- intersect(stud.w2to5, stud.w7to12)
+traces.w2to5 <- subset(traces.w2to5, STUDENT_ID %in% stud.ids)
+traces.w7to12 <- subset(traces.w7to12, STUDENT_ID %in% stud.ids)
+```
+
+Check the number of students and sessions after the cleaning
+```{r}
+(paste("number of students:", length(stud.ids), "; initially, there were:", n.stud, "students"))
+n.sessions.w2to5 <- length(unique(traces.w2to5$SESSION_ID))
+(paste("number of sessions in weeks 2-5:", n.sessions.w2to5))
+n.sessions.w7to12 <- length(unique(traces.w7to12$SESSION_ID))
+(paste("number of sessions in weeks 7-12:", n.sessions.w7to12))
+(paste("total sessions: ", n.sessions.w2to5+n.sessions.w7to12, "; initially, there were:", n.sessions, "sessions"))
+```
+
+## Compute features for HMMs
+
+Compute separate feature sets for weeks 2-5 and weeks 7-12. 
+Features are computed for each student and each session.
+
+### Compute features for weeks 2-5 
+
+```{r results='hide'}
+## create a list of study sessions for each student
+stud.sessions <- list()
+for(s in 1:length(stud.ids)) {
+  stud.sessions[[s]] <- unique(traces.w2to5$SESSION_ID[traces.w2to5$STUDENT_ID==stud.ids[s]])
+}
+## create a data frame with the feature values for weeks 2-5
+features.w2to5 <- data.frame()
+for(s in 1:length(stud.sessions)) {
+  session.features.df <- compute.stud.session.features(stud.sessions[[s]], traces.w2to5)
+  session.features.df$STUDENT_ID <- stud.ids[s]
+  features.w2to5 <- as.data.frame(rbind(features.w2to5, session.features.df))
+}
+#str(features.w2to5)
+features.w2to5 <- features.w2to5[,c(9,1:8)]
+#head(features.w2to5)
+
+## add the ntimes attribute to the feature set (requied for the depmixS4)
+ntimes.vector <- compute.ntimes(features.w2to5)
+features.w2to5 <- add.ntimes.feature(features.w2to5, ntimes.vector)
+str(features.w2to5)
+
+## discretize the feature set
+discrete.w2to5 <- discretize.features(features.w2to5)
+
+## turn all the features into factor variables and save the feature set
+f.path <- "Intermediate_results/multinom_features_for_session_based_HMM_weeks2to5"
+ff.w2to5 <- factorize.and.store(discrete.w2to5, f.path)
+```
+
+### Compute features for weeks 7-12
+
+```{r results='hide'}
+## create a list of study sessions for each student
+stud.sessions <- list()
+for(s in 1:length(stud.ids)) {
+  stud.sessions[[s]] <- unique(traces.w7to12$SESSION_ID[traces.w7to12$STUDENT_ID==stud.ids[s]])
+}
+## create a data frame with the feature values for weeks 7-12
+features.w7to12 <- data.frame()
+for(s in 1:length(stud.sessions)) {
+  session.features.df <- compute.stud.session.features(stud.sessions[[s]], traces.w7to12)
+  session.features.df$STUDENT_ID <- stud.ids[s]
+  features.w7to12 <- as.data.frame(rbind(features.w7to12, session.features.df))
+}
+str(features.w7to12)
+features.w7to12 <- features.w7to12[,c(9,1:8)]
+#head(features.w7to12)
+
+## add the ntimes attribute to the feature set (requied for the depmixS4)
+ntimes.vector <- compute.ntimes(features.w7to12)
+features.w7to12 <- add.ntimes.feature(features.w7to12, ntimes.vector)
+
+## discretize the feature set
+discrete.w7to12 <- discretize.features(features.w7to12)
+
+## turn all the features into factor variables and save the feature set
+f.path <- "Intermediate_results/multinom_features_for_session_based_HMM_weeks7to12"
+ff.w7to12 <- factorize.and.store(discrete.w7to12, f.path)
+```
+
+## Fit HMM models
+
+```{r include=FALSE}
+library(depmixS4)
+```
+
+### Fit a model for weeks 2-5
+
+Compare models with different number of states:
+```{r results='asis'}
+s <- 742017
+compare.models(ff.w2to5, max.ns = 7, seed = s)
+```
+
+Choosing the model with 6 states since this is where both AIC and BIC have the lowest values.
+```{r results='hide'}
+mod.fit.6s <- fit.HMM(ff.w2to5, ns = 6, seed = s)
+summary(mod.fit.6s)
+```
+
+```{r include=FALSE}
+## get the estimated state for each observation 
+estimates <- posterior(mod.fit.6s)
+# add the estimated states to the features set and save it
+ff.w2to5 <- as.data.frame(cbind(ff.w2to5, estimates))
+write.csv(x = ff.w2to5[,c(1:9,11:17)], 
+          file = "results/session_based_HMM_6_states_weeks2to5.csv", 
+          quote = F, row.names = F)
+```
+
+Interpretation of the states:
+
+* **State 1**: A variety of learning actions; equally likely are: i) FA actions (form up to 50% of a session; proportions of correctly done items vary from session to session, but are most likely in the ranges 30-70% and 90-100%), ii) SA actions (forming 10-70% of a session; proportions of correctly done items vary from session to session, but are most likely in the 20-80% range); and iii) reading actions (form up to 30% of a session). There is a solid chance (p~0.6) that video watching forms up to 30% of a session, and also some chance (p~0.5) that metacognitive actions form up to 10% of a session.
+* **State 2**: A variety of learning actions: most likely SA actions form 80-100% of a session (proportions of correctly done items vary from session to session, but are most likely in the 20-60% range); there is some chance (p~0.45) that reading actions form up to 20% of a session; also, a small chance (p~0.3) that metacognitive actions form up to 10% of a session, and even less chance (p~0.15) of small presence of video watching actions (up to 10%). 
+* **State 3**: A variety of learning actions: most likely are FA actions with proportions varying from session to session (proportions of correctly done items also vary from session to session, but are most likely in the ranges 30-70% and 90-100%); there is a solid chance (p~0.8) that reading actions form up to 30% of a session; also, some chance (p~0.42) that video watching form up to 40% of a session, and a small chance (p~0.3) that metacognitive actions are present with up to 10%.
+* **State 4**: Reading actions form 90-100% of a session
+* **State 5**: Metacognitive actions form 90-100% of a session
+* **State 6**: most likely (p~1) are reading actions with proportions varying from session to session; there is a solid chance (p~0.6) that metacognitive actions participate with 10-40% or even 50-60%; finally, it is also likely (p~0.5) that video watching forms 30-60% of a session. 
+
+
+### Fit a model for weeks 7-12
+
+Compare models with different number of states:
+```{r results='asis'}
+compare.models(ff.w7to12, max.ns = 7, seed = s)
+```
+
+Choosing the model with 4 states since this is where both AIC and BIC have the lowest values.
+```{r results='hide'}
+mod.fit.4s <- fit.HMM(ff.w7to12, ns = 4, seed = s)
+summary(mod.fit.4s)
+```
+
+```{r include=FALSE}
+# add the estimated states to the features set and save it
+ff.w7to12 <- as.data.frame(cbind(ff.w7to12, posterior(mod.fit.4s)))
+str(ff.w7to12)
+write.csv(x = ff.w7to12[,c(1:9,11:15)], 
+          file = "results/session_based_HMM_4_states_weeks7to12.csv", 
+          quote = F, row.names = F)
+```
+
+Interpretation of the states:
+
+* **State 1**: A variety of learning actions: most likely are FA actions with proportions varying from session to session (proportions of correctly done items also vary from session to session, but are most likely in the ranges 30-70% and 90-100%); also highly likely (p~0.85) are reading actions (up to 30% of a session); 
+there is also some chance (p~0.55) that video watching actions form up to 30% of a session, as well as some chance (p~0.35) that SA actions are present (with proportions varying from session to session); finally, there is a small chance (p~0.2) that metacognitive actions form up to 10% of a session.
+* **State 2**: Metacognitive actions form 90-100% of a session.
+* **State 3**: Reading actions form 90-100% of a session; the rest are expected to be video watching and/or metacognitive actions.
+* **State 4**: SA actions form 80-100% of a session (the proportion of correctly done items vary from session to session, but are most likely in the 20-60% range); the rest are expected to be reading and/or metacognitive actions.
+
+In 2014, there was a an obvious overlap between the states in the two parts of the course (weeks 2-5 and 7-12), in terms that for each state identified in the 1st part of the course there was a corresponding state in the 2nd part. However, that is not the case with this (2015) dataset, at least not in the level it was present in 2014.
+
+### Compute and plot the distribution of states 
+
+
+#### First for weeks 2-5
+```{r}
+w2to5.dat <- read.csv(file = "results/session_based_HMM_6_states_weeks2to5.csv")
+
+table(w2to5.dat$state)
+round(prop.table(table(w2to5.dat$state)), digits = 2)
+
+```
+
+```{r include=FALSE}
+states.df <- compute.state.dist.per.student(w2to5.dat, n.states = 6)
+
+## create a df with percentages of states for each student  
+states.perc <- states.df
+for(r in 1:length(unique(w2to5.dat$STUDENT_ID))) {
+  states.perc[r,c(2:7)] <- states.perc[r,c(2:7)]/sum(states.perc[r,c(2:7)])
+}
+colnames(states.perc)[2:7] <- paste0("ST",1:6,"_PERC")
+
+## create long format suitable for plotting
+library(tidyr)
+states.perc.long <- gather(data = states.perc, key = state,
+                           value = percent, ... = ST1_PERC:ST6_PERC, 
+                           factor_key = T)
+```
+
+
+Plot the state distribution for each student
+```{r}
+cpallet.6st <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33')
+states.perc.long$STUDENT_ID <- factor(states.perc.long$STUDENT_ID)
+plot.session.percents(states.perc.long, 6, cpallet.6st)
+```
+
+Not very useful...
+
+
+#### Now, for weeks 7-12
+```{r}
+w7to12.dat <- read.csv(file = "results/session_based_HMM_4_states_weeks7to12.csv")
+
+table(w7to12.dat$state)
+round(prop.table(table(w7to12.dat$state)), digits = 2)
+```
+
+```{r include=FALSE}
+states.df <- compute.state.dist.per.student(w7to12.dat, n.states = 4)
+
+## create a df with percentages of states for each student  
+states.perc <- states.df
+for(r in 1:length(unique(w7to12.dat$STUDENT_ID))) {
+  states.perc[r,c(2:5)] <- states.perc[r,c(2:5)]/sum(states.perc[r,c(2:5)])
+}
+colnames(states.perc)[2:5] <- paste0("ST",1:4,"_PERC")
+
+## create long format suitable for plotting
+states.perc.long <- gather(data = states.perc, key = state,
+                           value = percent, ... = ST1_PERC:ST4_PERC, 
+                           factor_key = T)
+```
+
+Plot the state distribution for each student
+```{r}
+cpallet.4st <- c("#0072B2","#56B4E9", "#009E73", "#F0E442")
+states.perc.long$STUDENT_ID <- factor(states.perc.long$STUDENT_ID)
+plot.session.percents(states.perc.long, 4, cpallet.4st)
+```
+
+
+## Clustering students based on their state sequences
+
+Each student will be represented with a sequence of states that corresponds to the sequence of his/her learning sessions (states are identified using HMM, and each state corresponds to one learning session).
+
+Sequence clustering will be done separately for the two parts of the course, first, for weeks 2-5, and then for weeks 7-12.
+
+To be analyzed with [TraMineR](http://traminer.unige.ch/), a sequences like, for example, this one: ST1-ST1-ST1-ST2-ST2-ST4-... should be represented in the form:  
+ST1/3 ST1/2 ST4/1 ...
+In general, a sequence (student) should be represented as a vector of elements: <STATE/OCCURRENCE_CNT>
+
+### Sequence clustering for weeks 2-5
+
+Before formatting the data for sequence analysis, it would be good to examine the sequences (of students' study sessions) to identify the presence of outliers (ie. overly long or short sequences).
+```{r}
+seq.len <- compute.seqence.length(w2to5.dat)
+summary(seq.len$SESSION_CNT)
+boxplot.stats(seq.len$SESSION_CNT)$out
+# 14 outliers
+sort(seq.len$SESSION_CNT, decreasing = T)[1:20]
+# maybe remove just the "extreme" outliers?
+```
+
+```{r}
+## better also examine percentiles
+quantile(x = seq.len$SESSION_CNT, probs = seq(0, 0.1, 0.01))
+quantile(x = seq.len$SESSION_CNT, probs = seq(0.9, 1, 0.01))
+```
+
+Remove those students whose number of sessions is less than the 1st perc (5.6) or greater than the 99th perc (77.4); this way, 2% of students will be removed.
+```{r}
+to.remove <- seq.len$STUDENT_ID[seq.len$SESSION_CNT < 5.63]
+to.remove <- c(to.remove, seq.len$STUDENT_ID[seq.len$SESSION_CNT > 77.4])
+# 8 students in total (2.2%)
+seq.w2to5 <- subset(w2to5.dat, !(STUDENT_ID %in% to.remove))
+# 10463  (96.81% of the initial 10808 sessions)
+```
+After removing students whose number of sessions is less than the 1st perc. or greater than the 99th perc., there are `r length(unique(seq.w2to5$STUDENT_ID))` students left and `r nrow(seq.w2to5)` sessions.
+
+
+```{r include=FALSE}
+## keep only the data required for creating sequences
+seq.w2to5 <- seq.w2to5[,c(1,2,10)]
+
+## for each student, create state sequences of the form: ST1/3 ST1/2 ST4/1 ... 
+traminer.seq <- create.state.seq(seq.w2to5, "Intermediate_results/state_sequences_w2to5")
+```
+
+
+####Now, do sequence clustering
+
+First, compute dissimilarities among sequences using the Optimal Matching method; to compute the dissimilarities, we need a substitution-cost matrix. Since we have transition probabilities from one state to the next - obtained from the HMM method - we can use these to compute the substitution costs; using the following formula (from TraMineR documentation):
+SC(i,j) = cval - p(i,j) - p(j,i)
+where cval is, by default, equal to 2 
+
+```{r}
+ns <- 6
+state.trans.matrix <- matrix(data = c(0.074, 0.129, 0.157, 0.323, 0.203, 0.113,
+                                      0.051, 0.199, 0.172, 0.351, 0.124, 0.104,
+                                      0.125, 0.079, 0.322, 0.264, 0.108, 0.102,
+                                      0.083, 0.078, 0.194, 0.445, 0.089, 0.111,
+                                      0.090, 0.114, 0.135, 0.273, 0.264, 0.124,
+                                      0.110, 0.080, 0.232, 0.297, 0.108, 0.173),
+                             nrow = ns, ncol = ns, byrow = T,
+                             dimnames = list(seq(1,ns,1), seq(1,ns,1))) 
+cost.matrix <- compute.cost.matrix(state.trans.matrix, n.state = 6)
+cost.matrix
+```
+
+```{r results='hide'}
+## normalize the computed distances to account for differences in sequence lengths
+#dist.om1.75 <- seqdist(seqdata = traminer.seq, method = "OM", 
+#                       sm = cost.matrix, norm = T, indel = 1.75)
+dist.om2 <- seqdist(seqdata = traminer.seq, method = "OM", 
+                    sm = cost.matrix, norm = T, indel = 2)
+
+require(cluster)
+set.seed(742017)
+seq.ward <- agnes(dist.om2, diss = T, method = "ward")
+png(file = "graphics/w2to5_seq.ward_dist.om2.png", 
+    width = 1800, height = 1500, pointsize = 50)
+plot(seq.ward)
+dev.off()
+```
+
+```{r}
+## check the solution with 5 clusters
+cl5 <- examine.clusters(cl.mod = seq.ward, n.clust = 5, 
+                        custom.pallet = cpallet.6st)
+```
+
+```{r}
+## check the solution with 4 clusters
+cl4 <- examine.clusters(cl.mod = seq.ward, n.clust = 4, cpallet.6st)
+```
+
+```{r include=FALSE}
+## check the solution with 3 clusters
+cl3 <- examine.clusters(cl.mod = seq.ward, n.clust = 3, cpallet.6st)
+```
+
+```{r include=FALSE}
+## create a new data frame with one row for each student and the following columns: 
+## 1) student id
+## 2) the cluster the student is assigned to in 5 cluster model 
+## 3) the cluster the student is assigned to in 4 cluster model 
+## 4) the cluster the student is assigned to in 3 cluster model 
+clusts.w2to5 <- data.frame(STUDENT_ID=unique(seq.w2to5$STUDENT_ID))
+clusts.w2to5$cl5 <- as.factor(cl5)
+clusts.w2to5$cl4 <- as.factor(cl4)
+clusts.w2to5$cl3 <- as.factor(cl3)
+str(clusts.w2to5)
+## save the student cluster assignments 
+write.csv(clusts.w2to5, file = "results/seq_of_HMM_states_stud_clusts_w2to5_dist_2.csv",
+          quote = F, row.names = F)
+```
+
+####Compare the clusters w.r.t. the students' exam (midterm and final) scores
+
+```{r include=FALSE}
+source(file = "util_functions.R")
+
+add.scores.to.clusters <- function(clust.data) {
+  ## load all the scores
+  all.scores <- read.csv(file = "dataset/data2u_sem2_15_student_all_variables.csv")
+  ## keep only the relevant score
+  scores <- all.scores[, c('user_id', 'SC_FE_TOT', 'SC_MT_TOT')]
+  
+  s.diff <- setdiff(clust.data$STUDENT_ID, scores$user_id)
+  if (length(s.diff) > 0)
+    print(paste("socres are not available for students with IDs:", s.diff))
+  
+  clust.data <- merge(x = clust.data, y = scores,
+                      by.x = "STUDENT_ID", by.y = "user_id",
+                      all.x = T, all.y = F)
+  clust.data
+}
+```
+
+```{r include=FALSE}
+clusts.w2to5 <- add.scores.to.clusters(clusts.w2to5)
+str(clusts.w2to5)
+```
+
+##### Examine first the 4 clusters model
+
+Summary statistics for the students' exam scores:
+```{r results='asis'}
+## compute the summary statistics for the students' exam scores
+cl4.stats <- summary.stats(clusts.w2to5[,c(5,6)], clusts.w2to5$cl4, 4)
+kable(x = cl4.stats)
+```
+
+The final exam score is not normaly distributed (checked before); using non-parametric (Kruskal-Wallis) test to examine differences across the clusters
+```{r}
+kruskal.test(clusts.w2to5$SC_FE_TOT ~ clusts.w2to5$cl4)
+```
+
+Since the Kruskal-Wallis test indicated significant differences among the clusters, do pair-wise comparisons using the Mann-Whitney U Test; FDR correction is applied to avoid family-wise error: 
+```{r}
+stud.4cl.df <- clusts.w2to5[,c(1,3,5,6)]
+colnames(stud.4cl.df)[2] <- "class"
+kable(pairwise.exam.compare(4, 6, stud.4cl.df, "FE"))
+```
+
+Check the difference based on the midterm score:
+```{r}
+kruskal.test(clusts.w2to5$SC_MT_TOT ~ clusts.w2to5$cl4)
+```
+
+Apply Mann-Whitney U Test (with FDR correction) to do pair-wise comparisons:
+```{r results='asis'}
+kable(pairwise.exam.compare(4, 6, stud.4cl.df, "MT"))
+```
+For the midterm exam, there is a significant difference between all pairs of clusters except for the 3-4 pair.
+For the final exam, a significant difference is present for only 3 out of 6 pairs, namely for the pairs 2-3, 2-4, and 1-3.
+In this case, midterm exam is more important since clusters are based on student behaviour before the midterm.
+
+
+##### Now, examine the 5 clusters model
+
+Compute the summary statistics for the students' exam scores
+```{r results='asis'}
+cl5.stats <- summary.stats(clusts.w2to5[,c(5,6)], clusts.w2to5$cl5, 5)
+kable(x = cl5.stats)
+```
+
+Using Kruskal-Wallis test to examine differences across the 5 clusters:
+```{r}
+kruskal.test(clusts.w2to5$SC_FE_TOT ~ clusts.w2to5$cl5)
+```
+
+Pair-wise comparisons using the Mann-Whitney U Test (with FDR correction):
+```{r}
+stud.5cl.df <- clusts.w2to5[,c(1,2,5,6)]
+colnames(stud.5cl.df)[2] <- "class"
+kable(pairwise.exam.compare(5, 10, stud.5cl.df, "FE"))
+```
+
+Check the difference based on the midterm score:
+```{r}
+kruskal.test(clusts.w2to5$SC_MT_TOT ~ clusts.w2to5$cl5)
+```
+
+Apply Mann-Whitney U Test to do pair-wise comparisons:
+```{r results='asis'}
+kable(pairwise.exam.compare(5, 10, stud.5cl.df, "MT"))
+```
+
+
+
+For both midterm and final exams, a significant difference is present for only 4 out of 10 pairs, namely for the pairs 2-3, 2-4, 2-5, and 1-3.
+Since there is no stat. significant difference between clusters 4 and 5 and these two clusters were merged in one in the 4 cluster solution, it is better to *choose the 4 cluster solution* instead of the 5 cluster model.
+
+
+
+#### Examine further the 4 cluster model by comparing the clusters based on proportion of the different states (study tactics) in the students' state sequences 
+
+```{r include=FALSE}
+stud.states.clust <- merge.state.dist.and.clusters(w2to5.dat, clusts.w2to5,n.states = 6)
+
+## check if the number of states is normally distributed
+apply(X = stud.states.clust[,c(2:7)], MARGIN = 2, FUN = shapiro.test)
+# none is normaly distributed
+```
+
+Compare clusters w.r.t. the state counts in the 4 clusters solution:
+```{r}
+cl4.st6.stats <- summary.stats(stud.states.clust[,c(2:8)], stud.states.clust$cl4, 4)
+kable(cl4.st6.stats)
+```
+
+```{r include=FALSE}
+## create a df with percentages of states for each student  
+stud.states.perc <- stud.states.clust
+for(r in 1:n.stud) {
+  stud.states.perc[r,c(2:7)] <- 
+    stud.states.perc[r,c(2:7)]/sum(stud.states.perc[r,c(2:7)])
+}
+head(stud.states.perc)
+colnames(stud.states.perc)[2:7] <- paste0("ST", 1:6, "_PERC")
+```
+
+Compare the proportions of states in the 4 clusters solution:
+```{r}
+cl4.st6.perc <- summary.stats(stud.states.perc[,c(2:8)], stud.states.perc$cl4, 4)
+kable(cl4.st6.perc)
+```
+
+Use a statitical test to compare the clusters with respect to each of the STx_PERC, x=1:6 variables
+```{r include=FALSE}
+## check if the variables representing proportions of states are normally distributed
+apply(X = stud.states.perc[,c(2:7)], MARGIN = 2, FUN = shapiro.test)
+# only one is normally distributed; still, for consistency use Kruskal-Wallis test for  # all the variables
+```
+
+```{r}
+for(v in 2:7)
+  print(kruskal.test(as.vector(stud.states.perc[,v]) ~ stud.states.perc$cl4))
+```
+All the tests (that is, tests for all 6 variables) are significant indicating that the clusters differ not only in terms of the number of sequences, but the "constitution" of those sequences, i.e., the distribution of states that form the sequences. 
+
+
+### Sequence clustering for weeks 7-12
+
+Before formatting the data for sequence analysis, examine the sequences (of students' study sessions) to identify the presence of outliers 
+
+```{r}
+seq.len <- compute.seqence.length(w7to12.dat)
+summary(seq.len$SESSION_CNT)
+boxplot.stats(seq.len$SESSION_CNT)$out
+# 14 outliers
+sort(seq.len$SESSION_CNT, decreasing = T)[1:20]
+# maybe remove just the "extreme" outliers?
+```
+
+```{r}
+## better also examine percentiles
+quantile(x = seq.len$SESSION_CNT, probs = seq(0, 0.1, 0.01))
+quantile(x = seq.len$SESSION_CNT, probs = seq(0.9, 1, 0.01))
+```
+
+Remove those students whose number of sessions is less than the 1st perc (5) or greater than the 99th perc (73.4); this way, 2% of students will be removed
+```{r}
+to.remove <- seq.len$STUDENT_ID[seq.len$SESSION_CNT < 5]
+to.remove <- c(to.remove, seq.len$STUDENT_ID[seq.len$SESSION_CNT > 73.4])
+# 6 students in total (1.67%)
+seq.w7to12 <- subset(w7to12.dat, !(STUDENT_ID %in% to.remove))
+# 8953  (96.65% of the initial 9263 sessions)
+```
+After removing students whose number of sessions is less than the 1st perc. or greater than the 99th perc., there are `r length(unique(seq.w7to12$STUDENT_ID))` students left and `r nrow(seq.w7to12)` sessions.
+
+
+```{r include=FALSE}
+## keep only the data required for creating sequences
+seq.w7to12 <- seq.w7to12[,c(1,2,10)]
+
+## for each student, create state sequences of the form: ST1/3 ST1/2 ST4/1 ... 
+traminer.seq <- create.state.seq(seq.w7to12, "Intermediate_results/state_sequences_w7to12")
+```
+
+#### Now, do sequence clustering
+
+```{r}
+ns <- 4
+state.trans.matrix <- matrix(data = c(0.293, 0.099, 0.340, 0.268,
+                                      0.089, 0.253, 0.264, 0.394,
+                                      0.188, 0.063, 0.503, 0.245,
+                                      0.097, 0.126, 0.379, 0.398),
+                             nrow = ns, ncol = ns, byrow = T,
+                             dimnames = list(seq(1,ns,1), seq(1,ns,1))) 
+cost.matrix <- compute.cost.matrix(state.trans.matrix, n.state = ns)
+cost.matrix
+```
+
+```{r results='hide'}
+## normalize the distances to account for differences in sequence lengths
+#dist.om2 <- seqdist(seqdata = traminer.seq, method = "OM", 
+#                      sm = cost.matrix, norm = T, indel = 2)
+dist.om1.75 <- seqdist(seqdata = traminer.seq, method = "OM", 
+                       sm = cost.matrix, norm = T, indel = 1.75)
+
+require(cluster)
+set.seed(742017)
+seq.ward <- agnes(dist.om1.75, diss = T, method = "ward")
+png(file = "graphics/w7to12_seq.ward_dist.om1.75.png", width = 1800, height = 1500, pointsize = 50)
+plot(seq.ward)
+dev.off()
+```
+
+
+```{r}
+## check the solution with 5 clusters
+cl5 <- examine.clusters(cl.mod = seq.ward, n.clust = 5, 
+                        custom.pallet = cpallet.4st)
+```
+
+```{r}
+## check the solution with 4 clusters
+cl4 <- examine.clusters(cl.mod = seq.ward, n.clust = 4, cpallet.4st)
+```
+
+```{r include=FALSE}
+## check the solution with 6 clusters
+cl6 <- examine.clusters(cl.mod = seq.ward, n.clust = 6, cpallet.4st)
+```
+
+```{r include=FALSE}
+## create a new data frame with one row for each student and the following columns: 
+## 1) student id
+## 2) the cluster the student is assigned to in 5 cluster model 
+## 3) the cluster the student is assigned to in 4 cluster model 
+clusts.w7to12 <- data.frame(STUDENT_ID=unique(seq.w7to12$STUDENT_ID))
+clusts.w7to12$cl5 <- as.factor(cl5)
+clusts.w7to12$cl4 <- as.factor(cl4)
+#str(clusts.w7to12)
+## save the student cluster assignments 
+write.csv(clusts.w7to12, 
+          file = "results/seq_of_HMM_states_stud_clusts_w7to12_dist_1.75.csv", 
+          quote = F, row.names = F)
+```
+
+####Compare the clusters w.r.t. the students' exam (midterm and final) scores
+
+```{r include=FALSE}
+clusts.w7to12 <- add.scores.to.clusters(clusts.w7to12)
+str(clusts.w7to12)
+```
+
+##### Examine first the 4 clusters model
+
+Compute the summary statistics for the students' exam scores
+```{r results='asis'}
+cl4.stats <- summary.stats(clusts.w7to12[,c(4,5)], clusts.w7to12$cl4, 4)
+kable(x = cl4.stats)
+```
+
+Use statistical test (Kruskal-Wallis) to examine differences across the clusters:
+```{r}
+kruskal.test(clusts.w7to12$SC_FE_TOT ~ clusts.w7to12$cl4)
+```
+
+Do pair-wise comparisons using the Mann-Whitney U Test; FDR correction is used to avoid family-wise error:
+```{r}
+stud.4cl.df <- clusts.w7to12[,c(1,3:5)]
+colnames(stud.4cl.df)[2] <- "class"
+kable(pairwise.exam.compare(4, 6, stud.4cl.df, "FE"))
+```
+
+Check the difference based on the midterm score:
+```{r}
+kruskal.test(clusts.w7to12$SC_MT_TOT ~ clusts.w7to12$cl4)
+```
+
+Apply Mann-Whitney U Test to do pair-wise comparisons:
+```{r results='asis'}
+kable(pairwise.exam.compare(4, 6, stud.4cl.df, "MT"))
+```
+
+
+##### Now, the same for 5 cluster model
+
+Compute the summary statistics for the students' exam scores:
+```{r results='asis'}
+cl5.stats <- summary.stats(clusts.w7to12[,c(4,5)], clusts.w7to12$cl5, 5)
+kable(x = cl5.stats)
+```
+
+Examine differences across the clusters:
+```{r}
+kruskal.test(clusts.w7to12$SC_FE_TOT ~ clusts.w7to12$cl5)
+```
+
+Pair-wise comparisons using the Mann-Whitney U Test (with FDR correction):
+```{r}
+stud.5cl.df <- clusts.w7to12[,c(1,2,4,5)]
+colnames(stud.5cl.df)[2] <- "class"
+kable(pairwise.exam.compare(5, 10, stud.5cl.df, "FE"))
+```
+
+Check the difference based on the midterm score:
+```{r}
+kruskal.test(clusts.w7to12$SC_MT_TOT ~ clusts.w7to12$cl5)
+```
+
+Apply Mann-Whitney U Test to do pair-wise comparisons
+```{r results='asis'}
+kable(pairwise.exam.compare(5, 10, stud.5cl.df, "MT"))
+```
+
+
+
+Based on the above given comparison (w.r.t. the exam scores), models with 4 and 5 clusters look almost equally good. 
+In case of the 4 cluster model: for both FE and MT, a significant difference is present among all pairs of clusters except the 1-4 pair.
+In case of the 5 cluster model: for the FE, out of 10 cluster pairs, a significant difference is *not* detected for two pairs (1-4 and 1-5); for the MT, out of 10 cluster pairs, a significant difference was *not* found for 4 pairs (1-3, 1-4, 1-5, 4-5).
+
+For these clusters, more important is the comparison w.r.t. the final exam since the clusters are determined based on the students behaviour in the second half od the course, that is, after the midterm exam. So, there is no clear cut between the 4 and 5 cluster models; further examination of these models is needed...
+
+
+
+#### Examine further the clustering models by comparing the clusters based on proportion of the different states (study tactics) in the students' state sequences 
+
+
+##### First, the 4 cluster model
+
+```{r include=FALSE}
+stud.states.clust <- merge.state.dist.and.clusters(w7to12.dat, clusts.w7to12, n.states=4)
+
+## check if the number of states is normally distributed
+apply(X = stud.states.clust[,c(2:5)], MARGIN = 2, FUN = shapiro.test)
+# none is normaly distributed
+```
+
+Compare state counts in the 4 cluster solution:
+```{r}
+cl4.st4.stats <- summary.stats(stud.states.clust[,c(2:6)], stud.states.clust$cl4, 4)
+kable(cl4.st4.stats)
+```
+
+```{r include=FALSE}
+## create a df with percentages of states for each student  
+stud.states.perc <- stud.states.clust
+for(r in 1:n.stud) {
+  stud.states.perc[r,c(2:5)] <- 
+    stud.states.perc[r,c(2:5)]/sum(stud.states.perc[r,c(2:5)])
+}
+#head(stud.states.perc)
+colnames(stud.states.perc)[2:5] <- paste0("ST", 1:4, "_PERC")
+```
+
+Compare the proportion of states in the 4 clusters solution:
+```{r}
+cl4.st4.perc <- summary.stats(stud.states.perc[,c(2:6)], stud.states.perc$cl4, 4)
+kable(cl4.st4.perc)
+```
+
+Use a statitical test to compare the clusters with respect to each of the STx_PERC, x=1:4 variables
+```{r include=FALSE}
+## check if the variables representing proportions of states are normally distributed
+apply(X = stud.states.perc[,c(2:5)], MARGIN = 2, FUN = shapiro.test)
+# none is normally distributed; use Kruskal-Wallis test for all the variables
+```
+
+```{r}
+for(v in 2:5)
+  print(kruskal.test(as.vector(stud.states.perc[,v]) ~ stud.states.perc$cl4))
+```
+
+There is a statistically significant difference among all the clusters with respect to the ST1_PERC - ST4_PERC variables. For variables ST1_PERC, ST3_PERC, ST4_PERC the significance is very strong (p-value < 2.2e-16), however, for ST2_PERC, p=0.0116, meaning that non all pairwise comparisons would be significant.
+
+
+
+##### Now, do the same for the 5 cluster model
+
+Compare state counts in the 5 cluster solution:
+```{r}
+cl5.st4.stats <- summary.stats(stud.states.clust[,c(2:6)], stud.states.clust$cl5, 5)
+kable(cl5.st4.stats)
+```
+
+Compare the proportion of states in the 5 cluster solution:
+```{r}
+cl5.st4.perc <- summary.stats(stud.states.perc[,c(2:6)], stud.states.perc$cl5, 5)
+kable(cl5.st4.perc)
+```
+
+Use Kruskal Wallis test to compare the clusters with respect to each of the STx_PERC, x=1:4 variables
+```{r}
+for(v in 2:5)
+  print(kruskal.test(as.vector(stud.states.perc[,v]) ~ stud.states.perc$cl5))
+```
+
+Practically the same situation as for the 4 cluster model: 
+there is a statistically significant difference among all the clusters with respect to the ST1_PERC - ST4_PERC variables. For variables ST1_PERC, ST3_PERC, ST4_PERC the significance is very strong (p-value < 2.2e-16), however, for ST2_PERC, p=0.01875, meaning that non all pairwise comparisons would be significant.
