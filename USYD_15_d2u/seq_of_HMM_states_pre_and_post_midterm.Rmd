@@ -149,18 +149,20 @@ Also, several outliers in weeks 7-12, but only two extreme: `r extremes.w7to12`
 
 Apply a "light-weight" version of outliers removal - removing only "extreme" outliers. Also remove the student with only 1 session (in weeks 2-5):
 ```{r include=FALSE}
-## identify the student with one session only
-one.session.stud <- unique(traces.w2to5$STUDENT_ID)[which(s.count.2to5 < 2)]
-## remove traces of the student with < 2 sesssion
-traces.w2to5 <- subset(traces.w2to5, STUDENT_ID != one.session.stud)
 
-## now, remove the extreme outliers
+## remove the extreme outliers
 ## first, do the removal for weeks 2-5
 stud.to.remove <- unique(traces.w2to5$STUDENT_ID)[which(s.count.2to5 %in% extremes.w2to5)]
 traces.w2to5 <- subset(traces.w2to5, !(STUDENT_ID %in% stud.to.remove))
 ## now, for the weeks 7-12
 stud.to.remove <- unique(traces.w7to12$STUDENT_ID)[which(s.count.7to12 %in% extremes.w7to12)]
 traces.w7to12 <- subset(traces.w7to12, !(STUDENT_ID %in% stud.to.remove))
+
+## identify the student with one session only
+one.session.stud <- unique(traces.w2to5$STUDENT_ID)[which(s.count.2to5 < 2)]
+## remove traces of the student with < 2 sesssion
+traces.w2to5 <- subset(traces.w2to5, STUDENT_ID != one.session.stud)
+
 ```
 
 Re-compute session counts (after the removal of extreme outliers)
@@ -273,30 +275,29 @@ s <- 742017
 compare.models(ff.w2to5, max.ns = 7, seed = s)
 ```
 
-Choosing the model with 6 states since this is where both AIC and BIC have the lowest values.
+Choosing the model with 5 states since this is where both AIC and BIC have the lowest values.
 ```{r results='hide'}
-mod.fit.6s <- fit.HMM(ff.w2to5, ns = 6, seed = s)
-summary(mod.fit.6s)
+mod.fit.5s <- fit.HMM(ff.w2to5, ns = 5, seed = s)
+summary(mod.fit.5s)
 ```
 
 ```{r include=FALSE}
 ## get the estimated state for each observation 
-estimates <- posterior(mod.fit.6s)
+estimates <- posterior(mod.fit.5s)
 # add the estimated states to the features set and save it
 ff.w2to5 <- as.data.frame(cbind(ff.w2to5, estimates))
-write.csv(x = ff.w2to5[,c(1:9,11:17)], 
-          file = "results/session_based_HMM_6_states_weeks2to5.csv", 
+write.csv(x = ff.w2to5[,c(1:9,11:16)], 
+          file = "results/session_based_HMM_5_states_weeks2to5.csv", 
           quote = F, row.names = F)
 ```
 
 Interpretation of the states:
 
-* **State 1**: A variety of learning actions; equally likely are: i) FA actions (form up to 50% of a session; proportions of correctly done items vary from session to session, but are most likely in the ranges 30-70% and 90-100%), ii) SA actions (forming 10-70% of a session; proportions of correctly done items vary from session to session, but are most likely in the 20-80% range); and iii) reading actions (form up to 30% of a session). There is a solid chance (p~0.6) that video watching forms up to 30% of a session, and also some chance (p~0.5) that metacognitive actions form up to 10% of a session.
-* **State 2**: A variety of learning actions: most likely SA actions form 80-100% of a session (proportions of correctly done items vary from session to session, but are most likely in the 20-60% range); there is some chance (p~0.45) that reading actions form up to 20% of a session; also, a small chance (p~0.3) that metacognitive actions form up to 10% of a session, and even less chance (p~0.15) of small presence of video watching actions (up to 10%). 
-* **State 3**: A variety of learning actions: most likely are FA actions with proportions varying from session to session (proportions of correctly done items also vary from session to session, but are most likely in the ranges 30-70% and 90-100%); there is a solid chance (p~0.8) that reading actions form up to 30% of a session; also, some chance (p~0.42) that video watching form up to 40% of a session, and a small chance (p~0.3) that metacognitive actions are present with up to 10%.
-* **State 4**: Reading actions form 90-100% of a session
-* **State 5**: Metacognitive actions form 90-100% of a session
-* **State 6**: most likely (p~1) are reading actions with proportions varying from session to session; there is a solid chance (p~0.6) that metacognitive actions participate with 10-40% or even 50-60%; finally, it is also likely (p~0.5) that video watching forms 30-60% of a session. 
+* **State 1**: A variety of learning actions; equally likely are: i) FA actions (form up to 50% of a session; proportions of correctly done items vary from session to session, but are most likely in the ranges 30-70% and 90-100%), ii) SA actions (forming 10-70% of a session; proportions of correctly done items vary from session to session, but are most likely in the 20-80% range); and iii) reading actions (form up to 30% of a session). There is a solid chance (p~0.6) that video watching forms up to 30% of a session, and also some chance (p~0.5) that metacognitive actions form up to 20% of a session. 
+* **State 2**: It is highly likely (p~0.8) that metacognitive actions form 90-100% of a session; the rest tend to be filled up by reading actions. 
+* **State 3**: Reading actions form 90-100% of a session.
+* **State 4**: Most likely SA actions form 80-100% of a session, with proportions of correctly done items varying from session to session, but most likely being in the 20-60% range; there is a chance (p~0.45) that reading actions form up to 30% of a session; also, some chance (p~0.3) that metacognitive actions are present with up to 20%, and a small chance (p~0.1) that video watching is slightly present (up to 10%).
+* **State 5**: A variety of learning actions: most likely are FA actions with proportions varying from session to session (proportions of correctly done items also vary from session to session, but are most likely in the ranges 40-70% and 90-100%); there is a solid chance (p~0.8) that reading actions form up to 30% of a session; also, some chance (p~0.5) that video watching form up to 50% of a session, and a small chance (p~0.3) that metacognitive actions are present with up to 10%.
 
 
 ### Fit a model for weeks 7-12
@@ -306,7 +307,7 @@ Compare models with different number of states:
 compare.models(ff.w7to12, max.ns = 7, seed = s)
 ```
 
-Choosing the model with 4 states since this is where both AIC and BIC have the lowest values.
+Choosing the model with 4 states since this is where both AIC and BIC have the largest drop in values.
 ```{r results='hide'}
 mod.fit.4s <- fit.HMM(ff.w7to12, ns = 4, seed = s)
 summary(mod.fit.4s)
@@ -323,20 +324,18 @@ write.csv(x = ff.w7to12[,c(1:9,11:15)],
 
 Interpretation of the states:
 
-* **State 1**: A variety of learning actions: most likely are FA actions with proportions varying from session to session (proportions of correctly done items also vary from session to session, but are most likely in the ranges 30-70% and 90-100%); also highly likely (p~0.85) are reading actions (up to 30% of a session); 
-there is also some chance (p~0.55) that video watching actions form up to 30% of a session, as well as some chance (p~0.35) that SA actions are present (with proportions varying from session to session); finally, there is a small chance (p~0.2) that metacognitive actions form up to 10% of a session.
-* **State 2**: Metacognitive actions form 90-100% of a session.
-* **State 3**: Reading actions form 90-100% of a session; the rest are expected to be video watching and/or metacognitive actions.
-* **State 4**: SA actions form 80-100% of a session (the proportion of correctly done items vary from session to session, but are most likely in the 20-60% range); the rest are expected to be reading and/or metacognitive actions.
+* **State 1**: It is highly likely (p~0.85) that metacognitive actions form 90-100% of a session; the rest tend to be filled up by reading actions.
+* **State 2**: Most likely SA actions form 80-100% of a session, with proportions of correctly done items varying from session to session, but most likely being in the 20-60% range; there is a small chance (p~0.2) that reading actions form up to 20% of a session, and that metacognitive actions are present with up to 10%.
+* **State 3**: Reading actions form 90-100% of a session.
+* **State 4**: A variety of learning actions: most likely are reading actions (up to 30% of a session); then, FA actions with proportions varying from session to session (proportions of correctly done items also vary from session to session, but are most likely in the 30-60% range); video watching is only slightly less likely than FA (p~0.65), and is expected to fill up to 50% of a session; there is also some chance (p~0.3) that SA actions are present (with proportions varying from session to session); finally, there is a tiny chance (p~0.2) that metacognitive actions form up to 10% of a session.
 
-In 2014, there was a an obvious overlap between the states in the two parts of the course (weeks 2-5 and 7-12), in terms that for each state identified in the 1st part of the course there was a corresponding state in the 2nd part. However, that is not the case with this (2015) dataset, at least not in the level it was present in 2014.
 
 ### Compute and plot the distribution of states 
 
 
 #### First for weeks 2-5
 ```{r}
-w2to5.dat <- read.csv(file = "results/session_based_HMM_6_states_weeks2to5.csv")
+w2to5.dat <- read.csv(file = "results/session_based_HMM_5_states_weeks2to5.csv")
 
 table(w2to5.dat$state)
 round(prop.table(table(w2to5.dat$state)), digits = 2)
@@ -344,28 +343,28 @@ round(prop.table(table(w2to5.dat$state)), digits = 2)
 ```
 
 ```{r include=FALSE}
-states.df <- compute.state.dist.per.student(w2to5.dat, n.states = 6)
+states.df <- compute.state.dist.per.student(w2to5.dat, n.states = 5)
 
 ## create a df with percentages of states for each student  
 states.perc <- states.df
 for(r in 1:length(unique(w2to5.dat$STUDENT_ID))) {
-  states.perc[r,c(2:7)] <- states.perc[r,c(2:7)]/sum(states.perc[r,c(2:7)])
+  states.perc[r,c(2:6)] <- states.perc[r,c(2:6)]/sum(states.perc[r,c(2:6)])
 }
-colnames(states.perc)[2:7] <- paste0("ST",1:6,"_PERC")
+colnames(states.perc)[2:6] <- paste0("ST",1:5,"_PERC")
 
 ## create long format suitable for plotting
 library(tidyr)
 states.perc.long <- gather(data = states.perc, key = state,
-                           value = percent, ... = ST1_PERC:ST6_PERC, 
+                           value = percent, ... = ST1_PERC:ST5_PERC, 
                            factor_key = T)
 ```
 
 
 Plot the state distribution for each student
 ```{r}
-cpallet.6st <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33')
+cpallet.5st <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33')
 states.perc.long$STUDENT_ID <- factor(states.perc.long$STUDENT_ID)
-plot.session.percents(states.perc.long, 6, cpallet.6st)
+plot.session.percents(states.perc.long, 5, cpallet.5st)
 ```
 
 Not very useful...
@@ -437,7 +436,7 @@ to.remove <- seq.len$STUDENT_ID[seq.len$SESSION_CNT < 5.63]
 to.remove <- c(to.remove, seq.len$STUDENT_ID[seq.len$SESSION_CNT > 77.4])
 # 8 students in total (2.2%)
 seq.w2to5 <- subset(w2to5.dat, !(STUDENT_ID %in% to.remove))
-# 10463  (96.81% of the initial 10808 sessions)
+# 10477  (96.81% of the initial 10822 sessions)
 ```
 After removing students whose number of sessions is less than the 1st perc. or greater than the 99th perc., there are `r length(unique(seq.w2to5$STUDENT_ID))` students left and `r nrow(seq.w2to5)` sessions.
 
@@ -458,30 +457,29 @@ SC(i,j) = cval - p(i,j) - p(j,i)
 where cval is, by default, equal to 2 
 
 ```{r}
-ns <- 6
-state.trans.matrix <- matrix(data = c(0.074, 0.129, 0.157, 0.323, 0.203, 0.113,
-                                      0.051, 0.199, 0.172, 0.351, 0.124, 0.104,
-                                      0.125, 0.079, 0.322, 0.264, 0.108, 0.102,
-                                      0.083, 0.078, 0.194, 0.445, 0.089, 0.111,
-                                      0.090, 0.114, 0.135, 0.273, 0.264, 0.124,
-                                      0.110, 0.080, 0.232, 0.297, 0.108, 0.173),
+ns <- 5
+state.trans.matrix <- matrix(data = c(0.071, 0.248, 0.352, 0.130, 0.199,
+                                      0.081, 0.288, 0.323, 0.103, 0.205,
+                                      0.083, 0.125, 0.453, 0.075, 0.263,
+                                      0.050, 0.152, 0.365, 0.202, 0.231,
+                                      0.120, 0.126, 0.276, 0.085, 0.393),
                              nrow = ns, ncol = ns, byrow = T,
                              dimnames = list(seq(1,ns,1), seq(1,ns,1))) 
-cost.matrix <- compute.cost.matrix(state.trans.matrix, n.state = 6)
+cost.matrix <- compute.cost.matrix(state.trans.matrix, n.state = 5)
 cost.matrix
 ```
 
 ```{r results='hide'}
 ## normalize the computed distances to account for differences in sequence lengths
-#dist.om1.75 <- seqdist(seqdata = traminer.seq, method = "OM", 
-#                       sm = cost.matrix, norm = T, indel = 1.75)
-dist.om2 <- seqdist(seqdata = traminer.seq, method = "OM", 
-                    sm = cost.matrix, norm = T, indel = 2)
+dist.om1.5 <- seqdist(seqdata = traminer.seq, method = "OM", 
+                       sm = cost.matrix, norm = T, indel = 1.5)
+# dist.om2 <- seqdist(seqdata = traminer.seq, method = "OM", 
+#                     sm = cost.matrix, norm = T, indel = 2)
 
 require(cluster)
 set.seed(742017)
-seq.ward <- agnes(dist.om2, diss = T, method = "ward")
-png(file = "graphics/w2to5_seq.ward_dist.om2.png", 
+seq.ward <- agnes(dist.om1.5, diss = T, method = "ward")
+png(file = "graphics/w2to5_seq.ward_dist.om1.5.png", 
     width = 1800, height = 1500, pointsize = 50)
 plot(seq.ward)
 dev.off()
@@ -490,17 +488,17 @@ dev.off()
 ```{r}
 ## check the solution with 5 clusters
 cl5 <- examine.clusters(cl.mod = seq.ward, n.clust = 5, 
-                        custom.pallet = cpallet.6st)
+                        custom.pallet = cpallet.5st)
 ```
 
 ```{r}
 ## check the solution with 4 clusters
-cl4 <- examine.clusters(cl.mod = seq.ward, n.clust = 4, cpallet.6st)
+cl4 <- examine.clusters(cl.mod = seq.ward, n.clust = 4, cpallet.5st)
 ```
 
 ```{r include=FALSE}
 ## check the solution with 3 clusters
-cl3 <- examine.clusters(cl.mod = seq.ward, n.clust = 3, cpallet.6st)
+cl3 <- examine.clusters(cl.mod = seq.ward, n.clust = 3, cpallet.5st)
 ```
 
 ```{r include=FALSE}
@@ -515,7 +513,7 @@ clusts.w2to5$cl4 <- as.factor(cl4)
 clusts.w2to5$cl3 <- as.factor(cl3)
 str(clusts.w2to5)
 ## save the student cluster assignments 
-write.csv(clusts.w2to5, file = "results/seq_of_HMM_states_stud_clusts_w2to5_dist_2.csv",
+write.csv(clusts.w2to5, file = "results/seq_of_HMM_states_stud_clusts_w2to5_dist_1.5.csv",
           quote = F, row.names = F)
 ```
 
@@ -576,8 +574,7 @@ Apply Mann-Whitney U Test (with FDR correction) to do pair-wise comparisons:
 ```{r results='asis'}
 kable(pairwise.exam.compare(4, 6, stud.4cl.df, "MT"))
 ```
-For the midterm exam, there is a significant difference between all pairs of clusters except for the 3-4 pair.
-For the final exam, a significant difference is present for only 3 out of 6 pairs, namely for the pairs 2-3, 2-4, and 1-3.
+For both midterm and final exams, there is a significant difference between 4 out of 6 pairs of clusters; the difference is not present between cluster pairs 1-3 and 2-4.
 In this case, midterm exam is more important since clusters are based on student behaviour before the midterm.
 
 
@@ -613,56 +610,57 @@ kable(pairwise.exam.compare(5, 10, stud.5cl.df, "MT"))
 
 
 
-For both midterm and final exams, a significant difference is present for only 4 out of 10 pairs, namely for the pairs 2-3, 2-4, 2-5, and 1-3.
-Since there is no stat. significant difference between clusters 4 and 5 and these two clusters were merged in one in the 4 cluster solution, it is better to *choose the 4 cluster solution* instead of the 5 cluster model.
+For midterm, a significant difference is present for 6 out of 10 pairs, whereas for the final exam, a significant difference is detected between only 4 out of 10 cluster pairs.
+Since there is no stat. significant difference between clusters 2 and 5 and these two clusters were merged in one in the 4 cluster solution, it is better to *choose the 4 cluster solution* instead of the 5 cluster model.
 
 
 
 #### Examine further the 4 cluster model by comparing the clusters based on proportion of the different states (study tactics) in the students' state sequences 
 
 ```{r include=FALSE}
-stud.states.clust <- merge.state.dist.and.clusters(w2to5.dat, clusts.w2to5,n.states = 6)
+stud.states.clust <- merge.state.dist.and.clusters(w2to5.dat, clusts.w2to5, n.states = 5)
 
 ## check if the number of states is normally distributed
-apply(X = stud.states.clust[,c(2:7)], MARGIN = 2, FUN = shapiro.test)
+apply(X = stud.states.clust[,c(2:6)], MARGIN = 2, FUN = shapiro.test)
 # none is normaly distributed
 ```
 
 Compare clusters w.r.t. the state counts in the 4 clusters solution:
 ```{r}
-cl4.st6.stats <- summary.stats(stud.states.clust[,c(2:8)], stud.states.clust$cl4, 4)
-kable(cl4.st6.stats)
+cl4.st5.stats <- summary.stats(stud.states.clust[,c(2:7)], stud.states.clust$cl4, 4)
+kable(cl4.st5.stats)
 ```
 
 ```{r include=FALSE}
 ## create a df with percentages of states for each student  
 stud.states.perc <- stud.states.clust
 for(r in 1:n.stud) {
-  stud.states.perc[r,c(2:7)] <- 
-    stud.states.perc[r,c(2:7)]/sum(stud.states.perc[r,c(2:7)])
+  stud.states.perc[r,c(2:6)] <- 
+    stud.states.perc[r,c(2:6)]/sum(stud.states.perc[r,c(2:6)])
 }
 head(stud.states.perc)
-colnames(stud.states.perc)[2:7] <- paste0("ST", 1:6, "_PERC")
+colnames(stud.states.perc)[2:6] <- paste0("ST", 1:5, "_PERC")
 ```
 
 Compare the proportions of states in the 4 clusters solution:
 ```{r}
-cl4.st6.perc <- summary.stats(stud.states.perc[,c(2:8)], stud.states.perc$cl4, 4)
-kable(cl4.st6.perc)
+cl4.st5.perc <- summary.stats(stud.states.perc[,c(2:7)], stud.states.perc$cl4, 4)
+kable(cl4.st5.perc)
 ```
 
-Use a statitical test to compare the clusters with respect to each of the STx_PERC, x=1:6 variables
+Use a statitical test to compare the clusters with respect to each of the STx_PERC, x=1:5 variables
 ```{r include=FALSE}
 ## check if the variables representing proportions of states are normally distributed
-apply(X = stud.states.perc[,c(2:7)], MARGIN = 2, FUN = shapiro.test)
-# only one is normally distributed; still, for consistency use Kruskal-Wallis test for  # all the variables
+apply(X = stud.states.perc[,c(2:6)], MARGIN = 2, FUN = shapiro.test)
+# two are normally distributed; 
+# still, for consistency use Kruskal-Wallis test for all the variables
 ```
 
 ```{r}
-for(v in 2:7)
+for(v in 2:6)
   print(kruskal.test(as.vector(stud.states.perc[,v]) ~ stud.states.perc$cl4))
 ```
-All the tests (that is, tests for all 6 variables) are significant indicating that the clusters differ not only in terms of the number of sequences, but the "constitution" of those sequences, i.e., the distribution of states that form the sequences. 
+All tests are significant indicating that the clusters differ not only in terms of the number of sequences, but the "constitution" of those sequences, i.e., the distribution of states that form the sequences. 
 
 
 ### Sequence clustering for weeks 7-12
@@ -707,10 +705,10 @@ traminer.seq <- create.state.seq(seq.w7to12, "Intermediate_results/state_sequenc
 
 ```{r}
 ns <- 4
-state.trans.matrix <- matrix(data = c(0.293, 0.099, 0.340, 0.268,
-                                      0.089, 0.253, 0.264, 0.394,
-                                      0.188, 0.063, 0.503, 0.245,
-                                      0.097, 0.126, 0.379, 0.398),
+state.trans.matrix <- matrix(data = c(0.263, 0.361, 0.250, 0.127,
+                                      0.148, 0.396, 0.323, 0.133,
+                                      0.078, 0.233, 0.444, 0.245,
+                                      0.103, 0.249, 0.265, 0.383),
                              nrow = ns, ncol = ns, byrow = T,
                              dimnames = list(seq(1,ns,1), seq(1,ns,1))) 
 cost.matrix <- compute.cost.matrix(state.trans.matrix, n.state = ns)
@@ -719,8 +717,8 @@ cost.matrix
 
 ```{r results='hide'}
 ## normalize the distances to account for differences in sequence lengths
-#dist.om2 <- seqdist(seqdata = traminer.seq, method = "OM", 
-#                      sm = cost.matrix, norm = T, indel = 2)
+# dist.om1.5 <- seqdist(seqdata = traminer.seq, method = "OM", 
+#                       sm = cost.matrix, norm = T, indel = 1.5)
 dist.om1.75 <- seqdist(seqdata = traminer.seq, method = "OM", 
                        sm = cost.matrix, norm = T, indel = 1.75)
 
@@ -745,8 +743,8 @@ cl4 <- examine.clusters(cl.mod = seq.ward, n.clust = 4, cpallet.4st)
 ```
 
 ```{r include=FALSE}
-## check the solution with 6 clusters
-cl6 <- examine.clusters(cl.mod = seq.ward, n.clust = 6, cpallet.4st)
+## check the solution with 3 clusters
+cl3 <- examine.clusters(cl.mod = seq.ward, n.clust = 3, cpallet.4st)
 ```
 
 ```{r include=FALSE}
@@ -801,6 +799,8 @@ Apply Mann-Whitney U Test to do pair-wise comparisons:
 kable(pairwise.exam.compare(4, 6, stud.4cl.df, "MT"))
 ```
 
+In the case of both midterm and final exams, significant difference w.r.t. the exam scores is present among all pairs of clusters except for the cluster pair 2-3.
+
 
 ##### Now, the same for 5 cluster model
 
@@ -832,20 +832,14 @@ Apply Mann-Whitney U Test to do pair-wise comparisons
 kable(pairwise.exam.compare(5, 10, stud.5cl.df, "MT"))
 ```
 
-
-
-Based on the above given comparison (w.r.t. the exam scores), models with 4 and 5 clusters look almost equally good. 
-In case of the 4 cluster model: for both FE and MT, a significant difference is present among all pairs of clusters except the 1-4 pair.
-In case of the 5 cluster model: for the FE, out of 10 cluster pairs, a significant difference is *not* detected for two pairs (1-4 and 1-5); for the MT, out of 10 cluster pairs, a significant difference was *not* found for 4 pairs (1-3, 1-4, 1-5, 4-5).
-
-For these clusters, more important is the comparison w.r.t. the final exam since the clusters are determined based on the students behaviour in the second half od the course, that is, after the midterm exam. So, there is no clear cut between the 4 and 5 cluster models; further examination of these models is needed...
-
+For midterm, a significant difference is present for 5 out of 10 pairs, whereas for the final exam, a significant difference is detected between 6 out of 10 cluster pairs.
+Since there is no stat. significant difference between clusters 1 and 4 and these two clusters were merged in one in the 4 cluster solution, it is probably better to *choose the 4 cluster solution* instead of the 5 cluster model.
 
 
 #### Examine further the clustering models by comparing the clusters based on proportion of the different states (study tactics) in the students' state sequences 
 
 
-##### First, the 4 cluster model
+##### The 4 cluster model
 
 ```{r include=FALSE}
 stud.states.clust <- merge.state.dist.and.clusters(w7to12.dat, clusts.w7to12, n.states=4)
@@ -890,29 +884,4 @@ for(v in 2:5)
   print(kruskal.test(as.vector(stud.states.perc[,v]) ~ stud.states.perc$cl4))
 ```
 
-There is a statistically significant difference among all the clusters with respect to the ST1_PERC - ST4_PERC variables. For variables ST1_PERC, ST3_PERC, ST4_PERC the significance is very strong (p-value < 2.2e-16), however, for ST2_PERC, p=0.0116, meaning that non all pairwise comparisons would be significant.
-
-
-
-##### Now, do the same for the 5 cluster model
-
-Compare state counts in the 5 cluster solution:
-```{r}
-cl5.st4.stats <- summary.stats(stud.states.clust[,c(2:6)], stud.states.clust$cl5, 5)
-kable(cl5.st4.stats)
-```
-
-Compare the proportion of states in the 5 cluster solution:
-```{r}
-cl5.st4.perc <- summary.stats(stud.states.perc[,c(2:6)], stud.states.perc$cl5, 5)
-kable(cl5.st4.perc)
-```
-
-Use Kruskal Wallis test to compare the clusters with respect to each of the STx_PERC, x=1:4 variables
-```{r}
-for(v in 2:5)
-  print(kruskal.test(as.vector(stud.states.perc[,v]) ~ stud.states.perc$cl5))
-```
-
-Practically the same situation as for the 4 cluster model: 
-there is a statistically significant difference among all the clusters with respect to the ST1_PERC - ST4_PERC variables. For variables ST1_PERC, ST3_PERC, ST4_PERC the significance is very strong (p-value < 2.2e-16), however, for ST2_PERC, p=0.01875, meaning that non all pairwise comparisons would be significant.
+There is a statistically significant difference (p-value < 2.2e-16) among the clusters with respect to the variables ST1_PERC, ST3_PERC, and ST4_PERC variables. However, for ST2_PERC, p=0.06.
