@@ -3,7 +3,6 @@
 ## 'threshold' parameter is indicative of a termination of one session and the begining of
 ## another one; the threshold is expressed in minutes
 ## the f. returns the input dataframe with two new columns: 'time_gap' and 'session'
-
 compute.study.sessions <- function(traces, threshold) {
   traces$time_gap <- vector(mode = "numeric", length = nrow(traces))
   traces$session <- vector(mode = "numeric", length = nrow(traces))
@@ -38,7 +37,7 @@ compute.study.sessions <- function(traces, threshold) {
 
 ## the f. identifies overly short study sessions - those that are so short 
 ## than no meaninful learning activity could have taken place; the 'threshold' parameter 
-## sets the minimum lenght of a meaninful session, so any session with length less than 
+## sets the minimum lenght of a meaningful session, so any session with length less than 
 ## the given threshold will be consdered as overly short to be meaningful
 ## the threshold is expressed in minutes
 detect.overly.short.sessions <- function(traces, threshold) {
@@ -139,7 +138,8 @@ dominant.session.topic <- function(events_data) {
 
 
 ## the f. computes an indicator of regularity of study as the regularity of intervals between 
-## consecutive study sessions; in fact, for each student, it computes the standard deviation of 
+## consecutive study sessions; in fact, for each student, it computes median and MAD (median
+## absolute deviation - an alternative to SD for not normally distributed data) of
 ## the time period between two consecutive logins (sessions); 
 ## the time is expressed in minutes
 regularity.session.intervals <- function(sessions) {
@@ -187,16 +187,19 @@ regularity.session.intervals <- function(sessions) {
 
 
 
-## the f. computes the following counts (frequencies), per student:
+## the f. computes the following indicators, per student:
 ## - total number of study sessions
-## - number of sessions per week; and based on that:
+## - number of sessions per week, and based on that:
 ##  -- number of inactive weeks
-##  -- SD and MAD of weekly sessions counts
-##  -- entropy of weekly session counts
+##  -- SD and MAD of weekly sessions proportions
+##  -- entropy of weekly session 
 compute.weekly.counts <- function(sessions) {
   students <- unique(sessions$user_id)
   s.matrix <- matrix(nrow = length(students), ncol=16)
   s <- 1
+  
+  shapiro.pvals <- vector(mode = 'numeric', length = length(students))
+  
   for(i in 1:length(students)) {
     s.sessions <- subset(sessions, user_id==students[i])
     s.tot <- nrow(s.sessions)
@@ -208,26 +211,33 @@ compute.weekly.counts <- function(sessions) {
       weekly.proportions[wn] <- weekly.sessions[wn]/s.tot
       wn <- wn + 1
     }
+    
+    shapiro.pvals[s] <- shapiro.test(weekly.proportions)$p.value
+    
     weeks.inactive <- length(which(weekly.sessions==0))
-    weekly.sd <- sd(weekly.sessions)
-    weekly.mad <- mad(weekly.sessions)
+    weekly.sd <- sd(weekly.proportions)
+    weekly.mad <- mad(weekly.proportions)
     entropy <- -sum(sapply(weekly.proportions, function(p) {p * log1p(p)}))
     s.matrix[s,] <- c(students[i], s.tot, weekly.sessions, weeks.inactive, 
                       weekly.sd, weekly.mad, entropy)
     s <- s + 1
   }
+  
+  above_0.05 <- length(which(shapiro.pvals > 0.05))
+  print(paste("Proportion of students with normal dist for weekly proportions:", above_0.05/length(students)))
+  
   counts.df <- data.frame(s.matrix)
   colnames(counts.df) <- c('user_id', 's_total', paste0('count_w',c(2:5,7:12)), 
-                           'inactive_weeks', 'weekly_count_sd', 'weekly_count_mad', 'weekly_entropy')
+                           'inactive_weeks', 'weekly_prop_sd', 'weekly_prop_mad', 'weekly_entropy')
   counts.df
 }
 
 
 
 ## the f. computes, for each student, the number of sessions per 
-## each day of the week (Mon - Sun), and based on that indicators 
+## each day of a week (Mon - Sun), and based on that indicators 
 ## of (ir)regularity:
-## SD, MAD and entropy of session counts per week day
+## SD, MAD and entropy of session proportions per week day
 make.weekdays.counts <- function(sessions) {
   require(lubridate)
   
@@ -252,26 +262,26 @@ make.weekdays.counts <- function(sessions) {
       weekday.proportions[d] <- weekday.sessions[d]/s.tot
     }
     entropy <- -sum(sapply(weekday.proportions, function(p) {p * log1p(p)}))
-    s.matrix[s,] <- c(students[i], weekday.sessions, sd(weekday.sessions), 
-                      mad(weekday.sessions), entropy)
+    s.matrix[s,] <- c(students[i], weekday.sessions, sd(weekday.proportions), 
+                      mad(weekday.proportions), entropy)
     s <- s + 1
     
-    shapiro.pvals[i] <- shapiro.test(weekday.sessions)$p.value
+    shapiro.pvals[i] <- shapiro.test(weekday.proportions)$p.value
   }
   
   above_0.05 <- length(which(shapiro.pvals > 0.05))
-  print(paste("Proportion of students with normal dist for weekday counts", above_0.05/length(students)))
+  print(paste("Proportion of students with normal dist for weekday props:", above_0.05/length(students)))
   
   counts.df <- data.frame(s.matrix)
-  weekdays <- c('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun')
+  weekdays <- c('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat') 
   colnames(counts.df) <- c('user_id', paste0(weekdays,'_count'), 
-                           'weekday_count_sd', 'weekday_count_mad', 'weekday_entropy')
+                           'weekday_prop_sd', 'weekday_prop_mad', 'weekday_entropy')
   counts.df
 }
 
 
-## for each student, the f. computes the proportion of 'revisiting', 'catching-up', 
-## 'preparing', and 'ahead' study modes
+## for each student, the f. computes the proportion of learning events being 
+## of 'revisiting', 'catching-up', 'preparing', or 'ahead' study modes
 compute.smode.proportions <- function(study_mode_data) {
   students <- unique(study_mode_data$USER_ID)
   s.matrix <- matrix(nrow = length(students), ncol=5)
@@ -295,7 +305,7 @@ compute.smode.proportions <- function(study_mode_data) {
 
 ## for each student and each course week (except weeks 6 and 13), 
 ## the f. computes the proportion of each study mode; 
-## then, for each study mode, it computes SD of the weekly proportions
+## then, for each study mode, it computes SD and MAD of the weekly proportions
 weekly.studymode.regularity <- function(study_mode_data) {
   smodes <- c('preparing','revisiting','catching-up','ahead')
   students <- unique(study_mode_data$USER_ID)
@@ -420,7 +430,13 @@ resource.diversity <- function(events_data) {
 }
 
 
-
+# the f. compute proportions of 
+# - on-topic sessions, that is, sessions with the main_topic being the topic
+#    of the week's lecture
+# - 'last minute' on-topic sessions, ie, on-topic sessions done in 24h before a 
+#   week's lecture; lectures took place on Friday at noon, so, last minute are 
+#   on-topic sessions that happened between Thur noon and Fri noon
+# Also, the f. computes SD of on-topic and last minute on-topic proportions at the weekly level
 ontopic.and.last.minute.stats <- function(sessions) {
   require(lubridate)
   
@@ -541,7 +557,7 @@ winsor1 <- function (x, fraction=.05) {
 }
 
 
-## f. for Winsorizing a variable  
+## another f. for Winsorizing a variable  
 ## taken from: https://www.r-bloggers.com/winsorization/
 winsor2 <- function (x, multiple=3) {
   med <- median(x, na.rm = T)
@@ -560,20 +576,19 @@ normalize.feature <- function( feature ) {
   else ((feature - min(feature, na.rm = T))/(max(feature, na.rm = T) - min(feature, na.rm = T)))
 }
 
-## the f. scales the given feature set 
-## due to the presence of outliers, standardization is used (instead of normalization); 
-## also due to outliers, instead of using mean and SD, median and Interquartile Range (IQR) 
-## are used, as suggested here:
+
+## the f. scales the given feature set by standardizing them
+## as features are assumed to have outliers, instead of using mean and SD, 
+## median and Interquartile Range (IQR) are used, as suggested here:
 ## http://scikit-learn.org/stable/modules/preprocessing.html#scaling-data-with-outliers
 scale.features <- function(features) {
-  
   scaled.data <- data.frame(apply(features, 2, 
                                   function(x) {(x-median(x, na.rm = T))/IQR(x, na.rm = T)} ))
   scaled.data
 }
 
+
 do.hclustering <- function(features, hc.method) {
-  
   # compute the distance between the observations
   distance <- dist(features)
   # use the computed distances to do the clustering
@@ -614,4 +629,25 @@ do.kmedoids.clustering <- function(features, k.min, k.max) {
 }
 
 
+## function for visual comparison - using boxplots - of clusters w.r.t. each of the
+## clustering features
+plot.indicators <- function(indicators) {
+  require(ggplot2)
+  p1 <- ggplot(indicators, aes(x=group, y=ses_tot, fill=group)) + geom_boxplot()
+  p2 <- ggplot(indicators, aes(x=group, y=on_topic_prop, fill=group)) + geom_boxplot()
+  p3 <- ggplot(indicators, aes(x=group, y=last_min_prop, fill=group)) + geom_boxplot()
+  p4 <- ggplot(indicators, aes(x=group, y=week_prop_sd, fill=group)) + geom_boxplot()
+  p5 <- ggplot(indicators, aes(x=group, y=weekday_prop_sd, fill=group)) + geom_boxplot()
+  p6 <- ggplot(indicators, aes(x=group, y=on_topic_prop_sd, fill=group)) + geom_boxplot()
+  p7 <- ggplot(indicators, aes(x=group, y=last_min_prop_sd, fill=group)) + geom_boxplot()
+  p8 <- ggplot(indicators, aes(x=group, y=res_type_mad, fill=group)) + geom_boxplot()
+  p9 <- ggplot(indicators, aes(x=group, y=weekly_revisiting_prop_mad, fill=group)) + geom_boxplot()
+  
+  plots <- list(p1,p2,p3,p4,p5,p6,p7,p8,p9)
+  for(p in plots) {
+    print(p)
+    readline(prompt="Press [enter] to continue")
+  }
+  
+}
 

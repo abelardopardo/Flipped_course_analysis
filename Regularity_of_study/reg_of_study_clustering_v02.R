@@ -1,19 +1,18 @@
-#################################
-# Feature selection and scaling
-#################################
 library(tidyverse)
 library(caret)
 
 source("regularity_of_study_functions.R")
 
+## read in all the computed indicators
 regularity_data <- read_csv("Intermediate_results/regularity_of_study/regularity_indicators.csv")
 str(regularity_data)
 
+#################################
+# Feature selection and scaling
+#################################
 
-## first, choose features / indicators to use
-## primarily, choose between SD and MAD (Absolute Deviation Around the Median) 
+## first, choose between SD and MAD (Absolute Deviation Around the Median) 
 ## as measures of deviation / irregularity
-
 regularity_data <- regularity_data %>%
   select(1:4,6,7,9:12,15:20,23,24)
 
@@ -35,7 +34,7 @@ sort(outliers, decreasing = T)
 # some have excedengly high number:
 # inactive_week_cnt: 76
 # topic_cnt_mad: 71
-# week_cnt_entropy: 33
+# week_entropy: 33
 # ses_timegap_mad: 27
 # ...
 
@@ -47,7 +46,9 @@ length(which(regularity_data$topic_cnt_mad>0))
 # 71 - and all are ouliers
 sort(boxplot.stats(regularity_data$week_cnt_entropy)$out)
 
-## nothing can be done for the inactive_week_cnt and topic_cnt_mad, remove them
+## nothing can be done for the inactive_week_cnt and topic_cnt_mad, 
+## the only option is to turn them into binary variables, but as such they
+## could not be used for clustering; so, remove them
 regularity_data <- regularity_data %>%
   select(-c(topic_cnt_mad, inactive_week_cnt))
 outliers <- outliers[-c(2,10)]
@@ -69,7 +70,7 @@ summary(winsorized_data_v1)
 
 ## remove the variables that kept large number of outliers even after winsorizing
 winsorized_data_v1 <- winsorized_data_v1 %>% 
-  select(-c(ses_timegap_mad, week_cnt_entropy))
+  select(-c(ses_timegap_mad, week_entropy))
 
 base::setdiff(colnames(regularity_data), colnames(winsorized_data_v1))
 
@@ -77,6 +78,8 @@ features <- data.frame(cbind(regularity_data %>%
                                select(user_id, res_type_median, res_type_mad, last_min_prop_sd), 
                              winsorized_data_v1))
 str(features)
+## change the order of features, to make it easier for later interpretation
+features <- features[,c(1,5:13,4,2,3)]
 summary(features)
 
 ## check for correlations among the indicators
@@ -88,7 +91,7 @@ apply(features[,-1], 2, shapiro.test)
 ## using findCorrelation f. from caret, with Spearman
 indicators_cor <- cor(features[,-1], use = "complete.obs", method = "spearman")
 findCorrelation(indicators_cor, cutoff = .7, names = T)
-# "ses_tot"      "res_type_mad"
+# weekday_entropy" "res_type_median"
 
 ## examine correlations in more detail
 
@@ -107,29 +110,36 @@ ggcorr(features[,-1], method = c("complete","spearman"),
 
 ## manually: 
 ## based on the correlations plot, the exclusion of 
-## - res_type_mad (3),  
-## - ses_tot (5)
-## - weekly_preparing_prop_mad (9)
+## - res_type_median (12),  
+## - weekday_entropy (5)
+## - weekly_preparing_prop_mad (6)
 ## will largely solve the problem of correlated features; let's check it
-ggcorr(features[,-c(1,3,5,9)], method = c("complete","spearman"), 
+ggcorr(features[,-c(1,5,6,12)], method = c("complete","spearman"), 
        label = TRUE, label_size = 3.5,
        hjust = 0.85, size = 4, layout.exp = 1)
 
 
 f.man.filtered <- features %>%
-  select(-c(res_type_mad, ses_tot, weekly_preparing_prop_mad))
+  select(-c(res_type_median, weekday_entropy, weekly_preparing_prop_mad))
 
 summary(f.man.filtered[,-1])
 apply(f.man.filtered, 2, function(x) which(is.na(x)))
 apply(f.man.filtered, 2, function(x) length(boxplot.stats(x)$out))
 
-## scale features: week_cnt_sd, weekday_cnt_sd
+## change the order of variables so that first come those related to the 
+## level and kind of engagement (ses_tot, on_topic_prop, last_min_prop)
+## and then the variables related to the regularity of behaviour
+f.man.filtered <- f.man.filtered %>% select(user_id, ses_tot, on_topic_prop, last_min_prop,
+                                            week_prop_sd, weekday_prop_sd, on_topic_prop_sd, last_min_prop_sd,
+                                            res_type_mad, weekly_revisiting_prop_mad)
+
+## scale features:
 ## since outliers are removed, normalization can be used
-f.scaled <- data.frame(apply(f.man.filtered %>% select(week_cnt_sd, weekday_cnt_sd), 
-                           2, function(x) {(x-median(x, na.rm = T))/IQR(x, na.rm = T)} ))
+f.scaled <- data.frame(apply(f.man.filtered[,-1], 
+                           2, normalize.feature ))
 summary(f.scaled)
 
-f.scaled <- data.frame(cbind(f.man.filtered %>% select(-c(week_cnt_sd, weekday_cnt_sd)), f.scaled))
+f.scaled <- data.frame(cbind(user_id=f.man.filtered$user_id, f.scaled))
 
 
 #############################################################
@@ -141,7 +151,7 @@ library(knitr)
 
 ## hierarchical clustering
 hc <- do.hclustering(f.scaled[,-1], 'ward.D2')
-## 3 or 4 clusters seem to be the best?
+## 3 or 5 clusters?
 
 ## examine various cluster models
 clusters <- sapply(3:8, function(ncl) table(cutree(hc, k = ncl)))
@@ -159,7 +169,8 @@ med.cl <- do.kmedoids.clustering(f.scaled, k.min = 3, k.max = 7)
 
 stud.clust <- data.frame(user_id=f.scaled$user_id,
                          cl4=cutree(hc, k=4),
-                         cl3=cutree(hc, k = 3))
+                         cl3=cutree(hc, k=3),
+                         cl5=cutree(hc, k=5))
 
 ## examine the 4 cluster model
 cl4.stats <- summary.stats(f.man.filtered[,-1], 
@@ -172,13 +183,17 @@ cl3.stats <- summary.stats(f.man.filtered[,-1],
                            clusters = stud.clust$cl3, cl.number = 3)
 kable(cl3.stats, format = 'rst')
 
+
+## examine the 5 cluster model
+cl5.stats <- summary.stats(f.man.filtered[,-1], 
+                           clusters = stud.clust$cl5, cl.number = 5)
+kable(cl5.stats, format = 'rst')
+
 ## use boxplots to better examine feature values across the clusters
-library(ggplot2)
-cl3.data <- f.man.filtered
-cl3.data$cluster <- as.factor(cutree(hc, k = 3))
-ggplot(cl3.data, aes(x=cluster, y=weekday_cnt_entropy, fill=cluster)) + geom_boxplot()
-ggplot(cl3.data, aes(x=cluster, y=last_min_prop, fill=cluster)) + geom_boxplot()
-ggplot(cl3.data, aes(x=cluster, y=on_topic_prop, fill=cluster)) + geom_boxplot()
+final.features.cl5 <- merge(x = f.man.filtered, y = stud.clust[,c(1,4)], by = 'user_id', all = T) 
+colnames(final.features.cl5)[11] <- 'group'
+final.features.cl5$group <- factor(final.features.cl5$group)
+plot.indicators(final.features.cl5)
 
 ####################################################
 ## compare clusters w.r.t. the students' exam scores
@@ -193,55 +208,57 @@ stud.clust <- merge(x = stud.clust, y = exam.scores[,-2],
                     by.x = 'user_id', by.y = 'USER_ID',
                     all.x = T, all.y = F)
 str(stud.clust)
-summary(stud.clust[,c(4,5)])
+summary(stud.clust[,c(5,6)])
 # missing scores for 9 students; remove them
 stud.clust <- stud.clust %>%
   filter( !is.na(SC_FE_TOT) )
-
-## examine the 3 clusters model
-
-## compute the summary statistics for the students' exam scores
-stud.cl3.stats <- summary.stats(stud.clust[,c(4,5)], stud.clust$cl3, 3)
-kable(x = stud.cl3.stats, format = "rst")
-
-kruskal.test(stud.clust$SC_FE_TOT ~ stud.clust$cl3)
-# chi-squared = 47.026, df = 2, p-value = 6.144e-11
-
-## apply Mann-Whitney U Test to do pair-wise comparisons
-cl3.df <- stud.clust[,-2]
-colnames(cl3.df)[2] <- "class"
-kable(pairwise.fexam.compare(3, 3, cl3.df), format = "rst")
-# all are significant
-
-kruskal.test(stud.clust$SC_MT_TOT ~ stud.clust$cl3)
-# chi-squared = 43.148, df = 2, p-value = 4.27e-10
-
-## do pairwise comparison
-kable(pairwise.mtxam.compare(3, 3, cl3.df), format = "rst")
-#  2 (out of 3) are significant
 
 
 ## examine the 4 clusters model
 
 ## compute the summary statistics for the students' exam scores
-stud.cl4.stats <- summary.stats(stud.clust[,c(4,5)], stud.clust$cl4, 4)
+stud.cl4.stats <- summary.stats(stud.clust %>% select(SC_MT_TOT, SC_FE_TOT), stud.clust$cl4, 4)
 kable(x = stud.cl4.stats, format = "rst")
 
 kruskal.test(stud.clust$SC_FE_TOT ~ stud.clust$cl4)
-# chi-squared = 47.217, df = 3, p-value = 3.125e-10
+# chi-squared = 69.367, df = 3, p-value = 5.831e-15
 
 ## apply Mann-Whitney U Test to do pair-wise comparisons
-cl4.df <- stud.clust[,-3]
+cl4.df <- stud.clust %>% select(user_id, cl4, SC_MT_TOT, SC_FE_TOT)
 colnames(cl4.df)[2] <- "class"
 kable(pairwise.fexam.compare(4, 6, cl4.df), format = "rst")
-# 3 (of 6) are not significant
+# only 1-4 pair is not significant
 
 kruskal.test(stud.clust$SC_MT_TOT ~ stud.clust$cl4)
-# chi-squared = 43.15, df = 3, p-value = 2.287e-09
+# chi-squared = 72.115, df = 3, p-value = 1.504e-15
 
 ## do pairwise comparison
 kable(pairwise.mtxam.compare(4, 6, cl4.df), format = "rst")
-# 3 (of 6) are not significant
+# only 1-4 pair is not significant
+
+
+## examine the 5 clusters model
+
+## compute the summary statistics for the students' exam scores
+stud.cl5.stats <- summary.stats(stud.clust %>% select(SC_MT_TOT, SC_FE_TOT), stud.clust$cl5, 5)
+kable(x = stud.cl5.stats, format = "rst")
+
+kruskal.test(stud.clust$SC_FE_TOT ~ stud.clust$cl5)
+# chi-squared = 76.437, df = 4, p-value = 9.894e-16
+
+## apply Mann-Whitney U Test to do pair-wise comparisons
+cl5.df <- stud.clust %>% select(user_id, cl5, SC_MT_TOT, SC_FE_TOT)
+colnames(cl5.df)[2] <- "class"
+kable(pairwise.fexam.compare(5, 10, cl5.df), format = "rst")
+# only 2-5 is not significant
+
+kruskal.test(stud.clust$SC_MT_TOT ~ stud.clust$cl5)
+# chi-squared = 74.903, df = 4, p-value = 2.089e-15
+
+## do pairwise comparison
+kable(pairwise.mtxam.compare(5, 10, cl5.df), format = "rst")
+#  3 (out of 10) are not significant
+
 
 ##########################################################
 ## check now the cluster models obtained through K-Medoids
@@ -373,7 +390,7 @@ plot(rf.no.ses.cnt)
 # mtry=3, RMSE:8.456089,  Rsquared: 0.2289698
 
 
-## examine the importance of features
+## examine the importance of features - with ses_tot included
 varImp(rf, scale = TRUE)
 # ses_tot                    100.000
 # week_cnt_entropy            63.685
@@ -390,7 +407,7 @@ varImp(rf, scale = TRUE)
 # res_type_median              3.346
 # res_type_mad                 0.000
 
-## examine the importance of features
+## examine the importance of features - based on model without ses_tot
 v.imp <- varImp(rf.no.ses.cnt, scale = TRUE)
 v.imp
 # week_cnt_entropy           100.0000
@@ -407,169 +424,56 @@ v.imp
 # res_type_mad                 0.6038
 # res_type_median              0.0000
 
-#############################################################
-# cluster students using the indicators / features that were
-# identified as important by RF model
-#############################################################
 
-summary(f.scaled)
-
-imp.vars <- rownames(v.imp$importance)[v.imp$importance$Overall>30]
-
-## add the 'ses_tot' feature to see if clustering will give better results
-## (ie. be better in distinguishing students based on their exam scores)
-imp.vars <- c('ses_tot', imp.vars)
-
-f.rf.selection <- f.scaled %>% 
-  select(one_of(imp.vars)) %>%
-  mutate(user_id=f.scaled$user_id)
-
-f.rf.selection <- f.rf.selection[,c(11,1:10)]
-
-## hierarchical clustering
-hc <- do.hclustering(f.rf.selection[,-1], 'ward.D2')
-## 3, 4 or 5 clusters?
-
-## examine various cluster models
-clusters <- sapply(3:8, function(ncl) table(cutree(hc, k = ncl)))
-names(clusters) <- c(3:8)
-clusters
-
-stud.clust <- data.frame(user_id=f.rf.selection$user_id,
-                         cl4=cutree(hc, k=4),
-                         cl3=cutree(hc, k = 3))
-
-## examine the 4 cluster model
-## for examining clusters, use the variables before scaling
-f.unscaled <- all.data %>%
-  select(one_of(c('user_id', imp.vars)))
-f.unscaled <- f.unscaled[,c(1,2,10,3,11,4:9)]
-
-cl4.stats <- summary.stats(f.unscaled[,-1], 
-                           clusters = stud.clust$cl4, cl.number = 4)
-kable(cl4.stats, format = 'rst')
-
-## examine the 3 cluster model
-cl3.stats <- summary.stats(f.unscaled[,-1], 
-                           clusters = stud.clust$cl3, cl.number = 3)
-kable(cl3.stats, format = 'rst')
-
-## use boxplots to better examine feature values across the clusters
-library(ggplot2)
-cl3.data <- f.unscaled
-cl3.data$cluster <- as.factor(cutree(hc, k = 3))
-ggplot(cl3.data, aes(x=cluster, y=weekday_cnt_entropy, fill=cluster)) + geom_boxplot()
-ggplot(cl3.data, aes(x=cluster, y=week_cnt_entropy, fill=cluster)) + geom_boxplot()
-ggplot(cl3.data, aes(x=cluster, y=on_topic_prop, fill=cluster)) + geom_boxplot()
-
-####################################################
-## compare clusters w.r.t. the students' exam scores
-####################################################
-
-## retrieve students' exam scores
-exam.scores <- read_csv(file = "Intermediate_results/exam_scores_with_student_ids.csv")
-str(exam.scores)
-
-## merge cluster data with exam scores
-stud.clust <- merge(x = stud.clust, y = exam.scores[,-2], 
-                    by.x = 'user_id', by.y = 'USER_ID',
-                    all.x = T, all.y = F)
-str(stud.clust)
-summary(stud.clust[,c(4,5)])
-
-## examine the 3 clusters model
-
-## compute the summary statistics for the students' exam scores
-stud.cl3.stats <- summary.stats(stud.clust[,c(4,5)], stud.clust$cl3, 3)
-kable(x = stud.cl3.stats, format = "rst")
-
-kruskal.test(stud.clust$SC_FE_TOT ~ stud.clust$cl3)
-# chi-squared = 53.174, df = 2, p-value = 2.841e-12
-# chi-squared = 69.757, df = 2, p-value = 7.119e-16 (with ses_tot)
-
-## apply Mann-Whitney U Test to do pair-wise comparisons
-cl3.df <- stud.clust[,-2]
-colnames(cl3.df)[2] <- "class"
-kable(pairwise.fexam.compare(3, 3, cl3.df), format = "rst")
-# 1-2 and 2-3 are significant (also when ses_tot is added)
-
-kruskal.test(stud.clust$SC_MT_TOT ~ stud.clust$cl3)
-# chi-squared = 36.709, df = 2, p-value = 1.069e-08
-# chi-squared = 57.262, df = 2, p-value = 3.678e-13 (with ses_tot)
-
-## do pairwise comparison
-kable(pairwise.mtxam.compare(3, 3, cl3.df), format = "rst")
-# 1-2 and 2-3 are significant (also when ses_tot is added)
-
-
-## examine the 4 clusters model
-
-## compute the summary statistics for the students' exam scores
-stud.cl4.stats <- summary.stats(stud.clust[,c(4,5)], stud.clust$cl4, 4)
-kable(x = stud.cl4.stats, format = "rst")
-
-kruskal.test(stud.clust$SC_FE_TOT ~ stud.clust$cl4)
-# chi-squared = 55.749, df = 3, p-value = 4.752e-12
-# chi-squared = 70.636, df = 3, p-value = 3.119e-15 (with ses_tot added)
-
-## apply Mann-Whitney U Test to do pair-wise comparisons
-cl4.df <- stud.clust[,-3]
-colnames(cl4.df)[2] <- "class"
-kable(pairwise.fexam.compare(4, 6, cl4.df), format = "rst")
-# 2-3, 3-4, and 1-3 are not significant
-# 3-4, 1-3, and 1-4 are not significant when ses_tot is added
-
-kruskal.test(stud.clust$SC_MT_TOT ~ stud.clust$cl4)
-# chi-squared = 38.793, df = 3, p-value = 1.92e-08
-# chi-squared = 57.78, df = 3, p-value = 1.752e-12
-
-## do pairwise comparison
-kable(pairwise.mtxam.compare(4, 6, cl4.df), format = "rst")
-# 2-3, 3-4, and 1-3 are not significant
-# 3-4, 1-3, and 1-4 are not significant when ses_tot is added
 
 #########################################################################
 ## examine values of regularity indicators for top perfoming students
 ## and those with the weakest performance on both midterm and final exams
 #########################################################################
+source(file = "util_functions.R")
 
 exam.scores <- read_csv(file = "Intermediate_results/exam_scores_with_student_ids.csv")
 exam.scores <- exam.scores[,-2]
 colnames(exam.scores)[1] <- 'user_id'
+summary(exam.scores)
 
-## get ids of students in top 10 percentile and bottom 10 percentile
+## get ids of students in top 10 and to 20 percentile and bottom 10 and 20 percentile
 stud.groups <- high.and.low.achievers(exam.scores)
 top.10p <- stud.groups[[1]]
+top.20p <- stud.groups[[3]]
 bottom.10p <- stud.groups[[5]]
+bottom.20p <- stud.groups[[7]]
 
 reg.indicators <- read_csv("Intermediate_results/regularity_of_study/regularity_indicators.csv")
 
 ## check if the user ids match
 length(intersect(top.10p, reg.indicators$user_id))
-# 15
+# 15 students
+length(intersect(top.20p, reg.indicators$user_id))
+# 42
 length(intersect(bottom.10p, reg.indicators$user_id))
 # 13 - so, we are missing data for 11 students
+length(intersect(bottom.20p, reg.indicators$user_id))
+# 33 - again, missing 11 students
 
-reg.selection <- reg.indicators %>%
+reg.10p.selection <- reg.indicators %>%
   filter(user_id %in% c(top.10p, bottom.10p)) %>%
   mutate(group = if_else(user_id %in% top.10p, true = 'top10p', false = 'bottom10p')) %>%
   mutate(group = factor(group))
 
-str(reg.selection)
+str(reg.10p.selection)
 
 top.10p.data <- reg.selection %>% filter(group=="top10p") 
 bottom.10p.data <- reg.selection %>% filter(group=="bottom10p") 
 
 ## plot the indicators for the two groups
-ggplot(reg.selection, aes(x=group, y=ses_tot, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=week_cnt_sd, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=week_cnt_entropy, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=weekday_cnt_sd, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=weekday_cnt_entropy, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=on_topic_prop, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=on_topic_prop_sd, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=last_min_prop, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=last_min_prop_sd, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=ses_timegap_mad, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=weekly_preparing_prop_mad, fill=group)) + geom_boxplot()
-ggplot(reg.selection, aes(x=group, y=weekly_revisiting_prop_mad, fill=group)) + geom_boxplot()
+plot.indicators(reg.10p.selection)
+
+reg.20p.selection <- reg.indicators %>%
+  filter(user_id %in% c(top.20p, bottom.20p)) %>%
+  mutate(group = if_else(user_id %in% top.20p, true = 'top20p', false = 'bottom20p')) %>%
+  mutate(group = factor(group))
+
+plot.indicators(reg.20p.selection)
+
+

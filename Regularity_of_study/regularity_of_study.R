@@ -155,15 +155,15 @@ session.regularity %>%
 ## store the computed regularity data
 write_csv(session.regularity, "Intermediate_results/regularity_of_study/inter-session_time_intervals.csv")
 
-## QUESTION: what level of divergence to consider as irregularity? 
+## QUESTION: can we use certain level of divergence as indicator of irregularity? 
 ## only outliers? those in the top and bottom 10 percentile?
 
 ######################################################################
 # Counts (frequencies), per student, that might be relevant:
 # - total number of study sessions (throughout the course)
-# - number of sessions per week; and based on that:
+# - number of sessions per week and based on that:
 #  -- number of inactive weeks (weeks with zero sessions)
-#  -- SD / MAD of weekly session counts
+#  -- SD / MAD of weekly session proportions
 #  -- entropy of weekly sessions
 #
 # weeks 6 and 13 are excluded as these are exam preparation weeks
@@ -173,52 +173,49 @@ write_csv(session.regularity, "Intermediate_results/regularity_of_study/inter-se
 session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
 table(session.data$week)
 
-weekly.counts <- compute.weekly.counts(session.data %>% filter(week %in% c(2:5,7:12)))
-str(weekly.counts)
+weekly.props <- compute.weekly.counts(session.data %>% filter(week %in% c(2:5,7:12)))
+# proportion of students with normal dist for weekly proportions: 0.78 -> use SD?
+str(weekly.props)
 
-table(weekly.counts$inactive_weeks)
+table(weekly.props$inactive_weeks)
 #   0   1   2   3   4   5   6   7   8   9 
 # 410  47  14   3   2   1   2   1   2   4 
 # 410 (84.36%) students were active all the weeks
 
-## examine if weekly counts are normally distributed
-shapiro.pvals <- apply(weekly.counts[,c(3:12)], 1, function(x) {shapiro.test(x)$p.value})
-length(which(shapiro.pvals > 0.05))
-# 378 out of 486 (78%) are normally dist.
-
-apply(weekly.counts %>% select(weekly_count_sd, weekly_count_mad, weekly_entropy),
+## check for outliers
+apply(weekly.props %>% select(weekly_prop_sd, weekly_prop_mad, weekly_entropy),
       2, function(x) length(boxplot.stats(x)$out))
-# weekly_count_sd  weekly_count_mad   weekly_entropy 
-#     14                6               33 
+# weekly_prop_sd weekly_prop_mad  weekly_entropy 
+#     22               5              33 
 
-## store the computed counts data
-write_csv(weekly.counts, "Intermediate_results/regularity_of_study/weekly_session_counts.csv")
+## store the computed indicators
+write_csv(weekly.props, "Intermediate_results/regularity_of_study/weekly_session_props.csv")
 
 
-##########################################################################
-# Number of sessions, per student, per each day of the week (Mon - Sun) 
-# Also, SD MAD, and entropy of session counts per week day - these serve
+###############################################################################
+# Compute number of sessions, per student, per each day of a week (Mon - Sun) 
+# Also, SD, MAD, and entropy of session proportions per week day - these serve
 # as indicators of regularity/irregularity in a student's weekday pattern 
 # 
-# the idea is to capture if the student is regular in terms of  
-# the week day when he/she would prepare for the week's F2F session)
+# the idea is to capture if a student is regular in terms of  
+# the week day when he/she would engage with online resources
 #
 # weeks 6 and 13 are excluded (the same reason as the above)
 ##########################################################################
 
-weekday.counts <- make.weekdays.counts(session.data %>% filter(week %in% c(2:5,7:12)))
-# proportion of students with normal dist for weekday counts 0.632
+weekday.props <- make.weekdays.counts(session.data %>% filter(week %in% c(2:5,7:12)))
+# proportion of students with normal dist for weekday props: 0.632
 
-summary(weekday.counts)
+summary(weekday.props)
 
 ## check for outliers
-apply(weekday.counts %>% select(weekday_count_sd, weekday_count_mad, weekday_entropy),
-      2, function(x) length(boxplot.stats(weekday.counts$weekday_count_sd)$out))
-#  weekday_count_sd weekday_count_mad   weekday_entropy 
-#       3                 3                 3
+apply(weekday.props %>% select(weekday_prop_sd, weekday_prop_mad, weekday_entropy),
+      2, function(x) length(boxplot.stats(x)$out))
+# weekday_prop_sd weekday_prop_mad  weekday_entropy 
+#       11                4               17
 
-## store the computed counts data
-write_csv(weekday.counts, "Intermediate_results/regularity_of_study/weekday_session_counts.csv")
+## store the computed indicators
+write_csv(weekday.props, "Intermediate_results/regularity_of_study/weekday_session_props.csv")
 
 
 ###################################################################
@@ -233,7 +230,7 @@ study.mode.data <- read_csv(file = "Intermediate_results/study_mode_weeks2-13.cs
 str(study.mode.data)
 table(study.mode.data$STUDY_MODE)
 
-## for each student compute the proportions of 'revisiting', 'preparing', 
+## for each student compute the proportions of events having 'revisiting', 'preparing', 
 ## 'catching-up', and 'ahead' study modes  
 study.mode.data <- study.mode.data %>%
   filter(WEEK %in% c(2:5,7:12)) %>%
@@ -307,7 +304,7 @@ events.data %>% select(topic) %>% table()
 
 ## compute topic diversity indicator
 topic.regularity <- topic.diversity(events.data)
-# Proportion of students with normal dist for topic ses. counts: 0
+# Proportion of students with normal dist. for topic ses. counts: 0
 summary(topic.regularity)
 
 ## check for outliers
@@ -315,12 +312,12 @@ apply(topic.regularity[,-1], 2, function(x) length(boxplot.stats(x)$out))
 # topic_cnt_median    topic_cnt_mad 
 #       13               71
 
-## store the indicators of regularity in topic diversity 
+## store the indicators related to topic diversity 
 write_csv(topic.regularity, "Intermediate_results/regularity_of_study/regularity_of_topic_diversity.csv")
 
 #################################################################################
-# Diversity in the types of resources used during a session and regular students
-# were with respect to this aspect of their learning behaviour
+# Diversity in the types of resources used during a session and how regular 
+# students were with respect to this aspect of their learning behaviour
 # This diversity can be considered as an indicator of the "depth" of the study 
 # session (the higher the diversity, the "deeper" the study session)
 # 
@@ -340,13 +337,13 @@ events.data <- events.data %>%
   filter( (session %in% session.data$session_id) & (week %in% c(2:5,7:12)) )
 
 ## add resource_type column based on the action types:
-## - form-submit and activity-duration - ignore; in any case they form just < 0.09% of all the events
-## - exco-* - refer to as exercises (EXE)
-## - embedded-question - refer to as multiple choice question (MCQ)
-## - embedded-video - refer to as video (VIDEO)
-## - dboard-view, studykit-view, xy-click - refer to as metacognitive actions (METACOG)
-## - resource-view - refer to as RES
-## - activity-collapse-expand - ignore, as these are produced when users expand or collapse a 
+## - 'form-submit' and 'activity-duration' - ignore; in any case they form just < 0.09% of all the events
+## - for 'exco-*' introduce exercise (EXE) as resource type
+## - for 'embedded-question' introduce multiple choice question (MCQ) as resource type
+## - for 'embedded-video' -introduce video (VIDEO) as resource type
+## - for 'dboard-view', 'studykit-view', 'xy-click' introduce metacognitive toolkit (METACOG) as resource type
+## - for 'resource-view' introduce RES as resource type
+## - 'activity-collapse-expand' - ignore, as these are produced when users expand or collapse a 
 ##   subsection of an HTML page, and access to a HTML page is already captured by resource-view 
 events.data <- events.data %>%
   filter( !(action_id %in% c('form-submit', 'activity-duration', 'activity-collapse-expand')) )
@@ -371,14 +368,17 @@ write_csv(res.type.regularity,
           "Intermediate_results/regularity_of_study/regularity_of_resource_type.csv")
 
 
-###############################################################################
-# Compute proportions of 'preparation' actions/events done in 24h before 
-# a week's lecture
-# Lectures took place on Friday at noon, and, the idea is to identify students
-# who were preparing primarily just before the lecture
+#################################################################################
+# Compute proportions of 
+# - 'preparation' sessions, that is, sessions with the main_topic being the topic
+#    of the week's lecture
+# - 'preparation' sessions done in 24h before a week's lecture; lectures took 
+#   place on Friday at noon, so, looking at 'preparation' sessions that happened 
+#   between Thur noon and Fri noon
+# Also, SD of these proportions computed at the weekly level
 #
 # weeks 6 and 13 are excluded
-###############################################################################
+#################################################################################
 
 session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
 table(session.data$main_topic)
@@ -406,13 +406,13 @@ write_csv(ontopic.last.min,
 # gather all indicators of regularity of study that have been computed so far
 ###########################################################################################
 
-weekly.counts <- read_csv("Intermediate_results/regularity_of_study/weekly_session_counts.csv")
-weekday.counts <- read_csv("Intermediate_results/regularity_of_study/weekday_session_counts.csv")
+weekly.props <- read_csv("Intermediate_results/regularity_of_study/weekly_session_props.csv")
+weekday.props <- read_csv("Intermediate_results/regularity_of_study/weekday_session_props.csv")
 
-str(weekly.counts)
-str(weekday.counts)
+str(weekly.props)
+str(weekday.props)
 
-regularity.data <- merge(x = weekly.counts[, c(1,2,13:16)], y = weekday.counts[,c(1,9:11)],
+regularity.data <- merge(x = weekly.props[, c(1,2,13:16)], y = weekday.props[,c(1,9:11)],
                          by = 'user_id', all = T)
 
 ses.regularity <- read_csv("Intermediate_results/regularity_of_study/inter-session_time_intervals.csv")
@@ -424,8 +424,8 @@ regularity.data <- merge(x = regularity.data,
                          y = study.mode.regularity[,c(1,6:9)], 
                          by = 'user_id', all = TRUE)
 
-colnames(regularity.data)[2:10] <- c('ses_tot', 'inactive_week_cnt','week_cnt_sd','week_cnt_mad', 'week_cnt_entropy', 
-                                    'weekday_cnt_sd','weekday_cnt_mad', 'weekday_cnt_entropy', 'ses_timegap_mad')
+colnames(regularity.data)[2:10] <- c('ses_tot', 'inactive_week_cnt','week_prop_sd','week_prop_mad', 'week_entropy', 
+                                    'weekday_prop_sd','weekday_prop_mad', 'weekday_entropy', 'ses_timegap_mad')
 
 topic.regularity <- read_csv("Intermediate_results/regularity_of_study/regularity_of_topic_diversity.csv")
 regularity.data <- merge(x = regularity.data, y = topic.regularity, by = 'user_id', all = T)
@@ -445,23 +445,14 @@ write_csv(regularity.data,
 
 
 #############################################################################
-# TODO:
+# Potential additional features:
 #
-# Timing of study sessions w.r.t. the F2F session with the teacher/tutor
-#
-# Provided that we know when F2F sessions with the teacher occurred, compute
-# - average time distance between a student's online study sessions and 
-#   F2F sessions with the teacher
-# - st. deviation in time distance between online and F2F sessions
-# - percentage of student's online sessions that are on the same day as
-#   the F2F session
-#
-# Alternatively, assuming we know day/time when the preparation activities 
-# for a particular week were made available to students, we can compute
-# with how much delay a student started working on the preparation activities
-# Again, we can compute:
+# Assuming we know day/time when the preparation activities for a particular 
+# week were made available to students, we can compute with how much delay
+# a student started working on the preparation activities
+# We can compute:
 # - average delay
-# - st. deviation of the delay
+# - SD / MAD of the delay
 #############################################################################
 
 
