@@ -544,6 +544,119 @@ get.week.topics <- function(week) {
 # }
 
 
+## the f. computes, for each student, the number of days the student
+## was active in each week of the course; it also computes the number
+## of active days per week, as well as SD and entropy of weekly counts
+make.daily.counts <- function(sessions) {
+  require(lubridate)
+  
+  ## first, change the time to Sydney time zone
+  sessions$start_time <- as.POSIXct(sessions$start_time, tz = 'Australia/Sydney')
+  
+  students <- unique(sessions$user_id)
+  ## number of columns: 1+ 10*7 + 10
+  ## user_id
+  ## 10 weeks; for each week, for each day of the week, an indicator if a student was active (10*7) 
+  ## plus, for each week, the number of days the student was active in that week 
+  s.matrix <- matrix(nrow = length(students), ncol=(1+7*10+10)) 
+  s <- 1
+  
+  ## vector for keeping p value of the shapiro test of normality
+  ## this is to examine if the weekly counts follow normal distribution
+  shapiro.pvals <- vector(mode = 'numeric', length = length(students))
+  
+  for(stud in students) {
+    stud.sessions <- subset(sessions, user_id==stud)
+    
+    ## vector for keeping the computed counts data about the given student
+    stud.all.counts <- c(stud) 
+    ## vector for keeping weekly summaries = number of engaged days for each week
+    stud.weekly.counts <- vector(mode = 'numeric', length = 10)
+    c <- 1
+    
+    ## consider each week individualy
+    for(w in c(2:5,7:12)) {
+      stud.weekly.ses <- subset(stud.sessions, week==w)
+      weekday.sessions <- vector(mode = 'numeric', length = 7)
+      for(d in 1:7) 
+        weekday.sessions[d] <- length(which(wday(stud.weekly.ses$start_time, label=F)==d))
+      stud.all.counts <- c(stud.all.counts, weekday.sessions)  
+      
+      ## it is only important to have at least one session in a day; 
+      ## it is irrelevant how many session there were in a day
+      weekday.binary <- ifelse(test = weekday.sessions > 0, yes = 1, no = 0)
+      stud.weekly.counts[c] <- sum(weekday.binary)
+      c <- c + 1
+    }
+    stud.all.counts <- c(stud.all.counts, stud.weekly.counts)
+    s.matrix[s,] <- stud.all.counts
+    s <- s + 1
+    
+    shapiro.pvals[s] <- shapiro.test(stud.weekly.counts)$p.value
+  }
+  
+  above_0.05 <- length(which(shapiro.pvals > 0.05))
+  print(paste("Proportion of students with normal dist for weekly counts of engaged days:", above_0.05/length(students)))
+  
+  counts.df <- data.frame(s.matrix)
+  weekdays <- c('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat') 
+  colnames(counts.df) <- c('user_id', 
+                           paste0('W2_',weekdays), paste0('W3_',weekdays), paste0('W4_',weekdays), paste0('W5_',weekdays),
+                           paste0('W7_',weekdays), paste0('W8_',weekdays), paste0('W9_',weekdays), paste0('W10_',weekdays),
+                           paste0('W11_',weekdays), paste0('W12_',weekdays), paste0('W',c(2:5,7:12),'_cnt'))
+  counts.df
+}
+
+
+## the f. computes the number of days (as the time gap) between 
+## two consecutive 'active' days (ie days when a student had at least
+## one study session)
+## the result is a data frame with mean, median, and SD of
+## the time gap (expressed in days)
+gaps.between.consecutive.active.days <- function(daily_counts) {
+  
+  students <- unique(daily_counts$user_id)
+  result.matrix <- matrix(nrow = length(students), ncol = 4)
+  c <- 1 
+  
+  ## vector for keeping p value of the shapiro test of normality
+  ## this is to examine if the weekly counts follow normal distribution
+  shapiro.pvals <- vector(mode = 'numeric', length = length(students))
+  
+  for(stud in students) {
+    stud.data <- daily_counts %>% filter(user_id==stud)
+    # vector of time gaps
+    gaps <- 0
+    # number of consecutive inactive days
+    inactive_cnt <- 0
+    for(j in 2:ncol(stud.data)) {
+      if (stud.data[j] > 0) {
+        gaps <- c(gaps, inactive_cnt)
+        inactive_cnt <- 0
+      } else {
+        inactive_cnt <- inactive_cnt + 1
+      }
+    }
+    # remove the initial 0 value
+    gaps <- gaps[-1]
+    
+    #check if the gaps are normally distributed
+    if ( length(gaps) > 3 ) # sample size must be between 3 and 5000
+      shapiro.pvals[c] <- shapiro.test(gaps)$p.value
+    
+    # compute mean, median, sd, and add to the matrix
+    result.matrix[c,] <- c(stud, mean(gaps), median(gaps), sd(gaps))
+    c <- c + 1
+  }
+  
+  above_0.05 <- length(which(shapiro.pvals > 0.05))
+  print(paste("Proportion of students with normal dist for time gaps:", above_0.05/length(students)))
+  
+  result.df <- data.frame(result.matrix)
+  colnames(result.df) <- c('user_id', 'mean_gap', 'median_gap', 'sd_gap')
+  result.df
+}
+
 
 ## f. for Winsorizing a variable  
 ## taken from: https://www.r-bloggers.com/winsorization/

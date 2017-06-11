@@ -443,6 +443,51 @@ write_csv(regularity.data,
 
 
 
+#############################################################################
+# For each student, compute the number of days the student was active 
+# (had at least one study session) in each week of the course
+#
+# To examine how regular a student was in weekly course engagements,
+# compute SD and entropy of weekly counts
+# 
+# To examine how regular a student was throughout the course,
+# compute the number of days (time gap) between two consecutive engagements
+#############################################################################
+session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
+
+daily.counts <- make.daily.counts(session.data)
+# proportion of students with normal dist for weekly counts of engaged days: 0.564
+
+## add a column with the total number of active/engaged days
+daily.counts$tot_cnt <- rowSums(daily.counts[,c(72:81)])
+
+## add a column for SD of the weekly counts
+daily.counts$weekly_cnt_sd <- apply(daily.counts[,c(72:81)], 1, sd)
+
+## add a column for entropy of weekly counts
+weekly.props <- as.data.frame(apply(daily.counts[,c(72:81)], 2, 
+                                    function(x) x/daily.counts$tot_cnt))
+entropy <- apply(weekly.props, 1, function(x) {-sum(x * log1p(x))})
+summary(entropy)
+daily.counts$weekly_entropy <- entropy
+
+## store the data
+write_csv(daily.counts, 
+          "Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins.csv")
+
+
+## compute time gap (in days) between two consecutive active days
+daily.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins.csv")
+
+daily.gaps <- gaps.between.consecutive.active.days(daily.counts[,c(1:71)])
+# Proportion of students with normal dist for time gaps: 0.028
+
+summary(daily.gaps[,-1])
+
+## store the data
+write_csv(daily.gaps, 
+          "Intermediate_results/regularity_of_study/gaps_between_consecutive_logins.csv")
+
 
 #############################################################################
 # Potential additional features:

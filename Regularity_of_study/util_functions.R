@@ -8,7 +8,8 @@ high.and.low.achievers <- function(scores) {
   
   ## first remove scores that are NAs
   no.scores <- which(complete.cases(scores)==F)
-  scores <- scores[-no.scores,]
+  if (length(no.scores)>0)
+    scores <- scores[-no.scores,]
   
   ## first identify students with high and low performance on the midterm exam
   midterm.percentiles <- quantile(x = scores$SC_MT_TOT, probs = c(0.10, 0.15, 0.2, 0.25, 0.75, 0.8, 0.85, 0.90))
