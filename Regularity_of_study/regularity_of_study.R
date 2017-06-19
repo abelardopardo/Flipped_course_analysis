@@ -455,17 +455,17 @@ write_csv(regularity.data,
 #############################################################################
 session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
 
-daily.counts <- make.daily.counts(session.data)
-# proportion of students with normal dist for weekly counts of engaged days: 0.564
+daily.counts <- make.daily.counts(session.data, c(2:13))
+# proportion of students with normal dist for weekly counts of engaged days: 0.64
 
 ## add a column with the total number of active/engaged days
-daily.counts$tot_cnt <- rowSums(daily.counts[,c(72:81)])
+daily.counts$tot_cnt <- rowSums(daily.counts[,c(86:97)])
 
 ## add a column for SD of the weekly counts
-daily.counts$weekly_cnt_sd <- apply(daily.counts[,c(72:81)], 1, sd)
+daily.counts$weekly_cnt_sd <- apply(daily.counts[,c(86:97)], 1, sd)
 
 ## add a column for entropy of weekly counts
-weekly.props <- as.data.frame(apply(daily.counts[,c(72:81)], 2, 
+weekly.props <- as.data.frame(apply(daily.counts[,c(86:97)], 2, 
                                     function(x) x/daily.counts$tot_cnt))
 entropy <- apply(weekly.props, 1, function(x) {-sum(x * log1p(x))})
 summary(entropy)
@@ -473,20 +473,356 @@ daily.counts$weekly_entropy <- entropy
 
 ## store the data
 write_csv(daily.counts, 
-          "Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins.csv")
+          "Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins_w2-13.csv")
 
 
 ## compute time gap (in days) between two consecutive active days
-daily.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins.csv")
+daily.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins_w2-13.csv")
 
-daily.gaps <- gaps.between.consecutive.active.days(daily.counts[,c(1:71)])
-# Proportion of students with normal dist for time gaps: 0.028
+daily.gaps <- gaps.between.consecutive.active.days(daily.counts[,c(1:85)])
+# Proportion of students with normal dist for time gaps: 0.02
 
 summary(daily.gaps[,-1])
 
 ## store the data
 write_csv(daily.gaps, 
-          "Intermediate_results/regularity_of_study/gaps_between_consecutive_logins.csv")
+          "Intermediate_results/regularity_of_study/gaps_between_consecutive_logins_w2-13.csv")
+
+
+#############################################################################
+# For each student and each day of the course, compute the number of different 
+# kinds of resources the student used on the given day
+#
+# the resources are determined based on the action type:  
+# - 'form-submit' and 'activity-duration' actions are ignored
+# - for 'exco-*', exercise (EXE) is introduced as the resource type
+# - for 'embedded-question', multiple choice question (MCQ) is the resource type
+# - for 'embedded-video', video (VIDEO) is the resource type
+# - for 'dboard-view', 'studykit-view', and 'xy-click' metacognitive toolkit (METACOG) is the resource type
+# - for 'resource-view', RES is the resource type
+# - 'activity-collapse-expand' is ignored, as these are produced when users expand or collapse a 
+#   subsection of an HTML page, and access to a HTML page is already captured by resource-view 
+#############################################################################
+session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
+
+events.data <- readRDS("Intermediate_results/all_events_with_sessions_and_action_len_w2to13.RData") 
+str(events.data)
+
+## keep only relevant columns and sessions that are not overly short (i.e. at least 30sec long)
+events.data <- events.data %>%
+  select(user_id, action_id, week, timestamp, session) %>%
+  filter( session %in% session.data$session_id )
+
+## add resource_type column based on the action types
+events.data <- events.data %>%
+  filter( !(action_id %in% c('form-submit', 'activity-duration', 'activity-collapse-expand')) )
+
+events.data$res_type <- "unknown"
+events.data$res_type[events.data$action_id=='embedded-question'] <- 'MCQ'
+events.data$res_type[events.data$action_id=='embedded-video'] <- 'VIDEO'
+events.data$res_type[events.data$action_id=='resource-view'] <- 'RES'
+events.data$res_type[events.data$action_id %in% c('dboard-view', 'studykit-view', 'xy-click')] <- 'METACOG'
+events.data$res_type[events.data$action_id %in% c('exco-answer', 'exco-done', 'exco-reset', 'exco-view')] <- "EXE"
+
+events.data %>% select(res_type) %>% table()
+
+daily.res.counts <- daily.counts.of.resource.use(events.data, 2:13)
+colnames(daily.res.counts)
+## store the counts
+write_csv(daily.res.counts, 
+          "Intermediate_results/regularity_of_study/daily_counts_of_resource_use_w2-13.csv")
+
+
+####################################################################################
+# Compute some basic statistics about the different kinds of resources students used
+# during their active days; the types of resources considered: 
+# - video
+# - exercises
+# - MCQs
+# - reading materials (RES)
+# - metacognitive items (METACOG)
+#
+# Computed statistics:
+# - median number of resources (of the give type) used during the student's active days
+# - MAD of resources (of the give type) used during the student's active days
+# - number of days when resources of the given type were used
+# - proportion of days when resources of the given type were used versus total number of
+#   active days
+# note: when computing these statistics, only the days when a student was active are considered
+#
+# Weeks 6 and 13 are excluded from these computations, as during these weeks one 
+# can expect  different behavioral patterns than usual
+#########################################################################################
+
+daily.res.counts <- read.csv("Intermediate_results/regularity_of_study/daily_counts_of_resource_use_w2-13.csv")
+count.vars <- colnames(daily.res.counts)
+
+## remove columns related to weeks 6 and 13
+weeks_6_13 <- grep("^(W6|W13).+", count.vars)
+count.vars <- count.vars[-weeks_6_13]
+daily.res.counts <- daily.res.counts %>% select(one_of(count.vars))
+
+## identify active days
+daily.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins_w2-13.csv")
+colnames(daily.counts)
+## columns from 86 onwards are irrelevant in this context
+daily.counts <- daily.counts[,c(1:85)]
+## remove columns related to weeks 6 and 13
+weeks_6_13 <- grep("^(W6|W13).+", colnames(daily.counts))
+daily.counts <- daily.counts[,-weeks_6_13]
+
+## data frame with binary 1-0 values indicating if a student was active on a certain day 
+active.days <- as.data.frame(apply(daily.counts[,-1], 2, 
+                                   function(x) ifelse(test = x > 0, yes = 1, no = 0)))
+active.days <- cbind(user_id=daily.counts$user_id, active.days)
+
+## from daily.res.counts select only variables related to video counts
+video.vars <- count.vars[grep(".+_VIDEO", count.vars)]
+video.vars <- c('user_id', video.vars)
+video.counts <- daily.res.counts %>% select(one_of(video.vars))
+
+video.stats <- compute.count.stats(video.counts, active.days)
+colnames(video.stats) <- c('user_id', 'median_video_cnt', 'mad_video_cnt', 
+                           'days_video_used', 'prop_video_used')
+summary(video.stats)
+length(which(video.stats$mad_video_cnt>0))
+# only 18 values - useless indicator
+length(which(video.stats$median_video_cnt>0))
+# also, only 18
+
+
+## from daily.res.counts select only variables related to exercise counts
+exe.vars <- count.vars[grep(".+_EXE", count.vars)]
+exe.vars <- c('user_id', exe.vars)
+exe.counts <- daily.res.counts %>% select(one_of(exe.vars))
+
+exe.stats <- compute.count.stats(exe.counts, active.days)
+# Ratio of student with normally distrubuted counts: 0.039 -> use median and MAD
+colnames(exe.stats) <- c('user_id', 'median_exe_cnt', 'mad_exe_cnt', 
+                           'days_exe_used', 'prop_exe_used')
+summary(exe.stats)
+
+## start merging the resource use statistics
+res.use.stats <- merge(x = video.stats, y = exe.stats, by = 'user_id', all = T)
+
+
+## from daily.res.counts select only variables related to MCQ counts
+mcq.vars <- count.vars[grep(".+_MCQ", count.vars)]
+mcq.vars <- c('user_id', mcq.vars)
+mcq.counts <- daily.res.counts %>% select(one_of(mcq.vars))
+
+mcq.stats <- compute.count.stats(mcq.counts, active.days)
+# Ration of student with normally distrubuted counts: 0.004 -> use median and MAD
+colnames(mcq.stats) <- c('user_id', 'median_mcq_cnt', 'mad_mcq_cnt', 
+                         'days_mcq_used', 'prop_mcq_used')
+summary(mcq.stats)
+## too many zeros for median_mcq_cnt and mad_mcq_cnt, let's check
+length(which(mcq.stats$median_mcq_cnt>0))
+# only 22
+length(which(mcq.stats$mad_mcq_cnt>0))
+# 21
+
+## add to resource use statistics
+res.use.stats <- merge(x = res.use.stats, y = mcq.stats, by = 'user_id', all = TRUE)
+
+
+## from daily.res.counts select only variables related to METACOG counts
+mcog.vars <- count.vars[grep(".+_METACOG", count.vars)]
+mcog.vars <- c('user_id', mcog.vars)
+mcog.counts <- daily.res.counts %>% select(one_of(mcog.vars))
+
+mcog.stats <- compute.count.stats(mcog.counts, active.days)
+# Ratio of student with normally distrubuted counts: 0.002 -> use median and MAD
+colnames(mcog.stats) <- c('user_id', 'median_mcog_cnt', 'mad_mcog_cnt', 
+                         'days_mcog_used', 'prop_mcog_used')
+summary(mcog.stats)
+## again, too many zeros for median and mad values; let's check
+length(which(mcog.stats$median_mcog_cnt>0))
+# only 22
+length(which(mcog.stats$mad_mcog_cnt>0))
+# 21
+
+## add to resource use statistics
+res.use.stats <- merge(x = res.use.stats, y = mcog.stats, by = 'user_id', all = TRUE)
+
+
+## from daily.res.counts select only variables related to RES counts
+res.vars <- count.vars[grep(".+_RES", count.vars)]
+res.vars <- c('user_id', res.vars)
+res.counts <- daily.res.counts %>% select(one_of(res.vars))
+
+res.stats <- compute.count.stats(res.counts, active.days)
+# Ratio of student with normally distrubuted counts: 0.064 -> use median and MAD
+colnames(res.stats) <- c('user_id', 'median_res_cnt', 'mad_res_cnt', 
+                          'days_res_used', 'prop_res_used')
+summary(res.stats)
+
+## add to resource use statistics
+res.use.stats <- merge(x = res.use.stats, y = res.stats, by = 'user_id', all = TRUE)
+
+## save the resource use statistics
+write_csv(res.use.stats, 
+          "Intermediate_results/regularity_of_study/daily_resource_use_statistics_w2-5_7-12.csv")
+
+
+#############################################################################
+# For each student and each day of the course compute the number of 
+# events / actions that were:
+# - 'ontopic' - the topic associated with the action is the topic of the current week
+# - 'revisiting' - the topic associated with the action is the topic of one of the previous weeks
+# - 'metacognitive' - the topic associated with the action is one of the following:
+#    'ORG', 'DBOARD', 'STRAT', 'STUDYKIT'
+# - 'orientiring' - the topic associated with the action is one of the following:
+#    'HOME', 'HOF', 'SEARCH', 'TEA', 'EXAM', 'W01'-'W13'
+# - 'project' - the action is related to project work
+#
+# Events with unknown topic (topic attribute not set) are removed
+#
+# Weeks 6 and 13 are excluded from these computations, as during these weeks one 
+# can expect  different behavioral patterns than usual
+#############################################################################
+
+session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
+
+events.data <- readRDS("Intermediate_results/all_events_with_sessions_and_action_len_w2to13.RData") 
+str(events.data)
+
+## keep only relevant columns and sessions that are not overly short (i.e. at least 30sec long)
+## also, remove events from weeks 6 and 13; also, events where the topic is unknown
+events.data <- events.data %>%
+  select(user_id, timestamp, week, topic, session) %>%
+  filter( (session %in% session.data$session_id) & (week %in% c(2:5,7:12)) & (is.na(topic)==FALSE))
+
+## examine topics
+events.data %>% select(topic) %>% table()
+
+## group some of the topics:
+## - ORG, DBOARD, STRAT, STUDYKIT - metacognitive actions
+## - HOME, W01 - W13, HOF, SEARCH - orientiring actions
+events.data$topic[events.data$topic %in% c('ORG', 'DBOARD', 'STRAT', 'STUDYKIT')] <- 'METACOG'
+events.data$topic[events.data$topic %in% c('HOME', 'HOF', 'SEARCH', 'TEA', 'EXAM',
+                                           paste0('W0', 1:9), paste0('W', 10:13))] <- 'ORIENTIRING'
+events.data %>% select(topic) %>% table()
+
+events.data %>% filter(topic=="PRJ") %>% select(week) %>% table()
+# students are work on the project from week 7
+
+daily.topic.cnt <- daily.topic.counts(events.data, c(2:5,7:12))
+colnames(daily.topic.cnt)
+
+## store the computed counts
+write_csv(daily.topic.cnt,
+          "Intermediate_results/regularity_of_study/daily_topic_counts_w2-5_7-12.csv")
+
+
+####################################################################################
+# Compute some basic statistics about the counts of the students' topic focus 
+# during their active days; possible topic foci (described above, lines 671-677): 
+# - 'ontopic' 
+# - 'revisiting' 
+# - 'metacognitive' 
+# - 'orientiring' 
+# - 'project' 
+#
+# Computed statistics:
+# - median number of learning actions per active day with a particular topic focus 
+# - MAD of learning actions per active day with a particular topic focus
+# - number of days with at least one action with particular topic focus 
+# - proportion of days with the given type of topic focus versus total number of
+#   active days
+# note: when computing these statistics, only the days when a student was active are considered
+#
+# Weeks 6 and 13 are excluded from these computations, as during these weeks one 
+# can expect  different behavioral patterns than usual
+#########################################################################################
+
+daily.topic.cnt <- read.csv("Intermediate_results/regularity_of_study/daily_topic_counts_w2-5_7-12.csv")
+cnt.vars <- colnames(daily.topic.cnt)
+
+## identify students' active days
+daily.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins_w2-13.csv")
+colnames(daily.counts)
+## columns from 86 onwards are irrelevant in this context
+daily.counts <- daily.counts[,c(1:85)]
+## remove columns related to weeks 6 and 13
+weeks_6_13 <- grep("^(W6|W13).+", colnames(daily.counts))
+daily.counts <- daily.counts[,-weeks_6_13]
+## data frame with binary 1-0 values indicating if a student was active on a certain day 
+active.days <- as.data.frame(apply(daily.counts[,-1], 2, function(x) ifelse(test = x > 0, yes = 1, no = 0)))
+active.days <- cbind(user_id=daily.counts$user_id, active.days)
+
+## from daily.topic.prop select only variables related to 'ontopic' events
+ontopic.vars <- cnt.vars[grep(".+_ontopic", cnt.vars)]
+ontopic.vars <- c('user_id', ontopic.vars)
+ontopic.cnt <- daily.topic.cnt %>% select(one_of(ontopic.vars))
+
+ontopic.stats <- compute.count.stats(ontopic.cnt, active.days)
+# ratio of student with normally distrubuted proportions: 0.01 -> use median and MAD
+colnames(ontopic.stats) <- c('user_id', 'median_ontopic_cnt', 'mad_ontopic_cnt', 
+                             'ontopic_days', 'ontopic_prop')
+summary(ontopic.stats)
+
+
+## from daily.topic.prop select only variables related to 'revisiting' events
+rev.vars <- cnt.vars[grep(".+_revisit", cnt.vars)]
+rev.vars <- c('user_id', rev.vars)
+rev.cnt <- daily.topic.cnt %>% select(one_of(rev.vars))
+
+rev.stats <- compute.count.stats(rev.cnt, active.days)
+# ratio of student with normally distrubuted proportions: 0.008 -> use median and MAD
+colnames(rev.stats) <- c('user_id', 'median_revisit_cnt', 'mad_revisit_cnt',
+                         'revisit_days', 'revisit_prop')
+summary(rev.stats)
+
+## merge stats related to different topic foci into one data frame
+topic.stats <- merge(x = ontopic.stats, y = rev.stats, by = 'user_id', all = TRUE)
+
+
+## from daily.topic.prop select only variables related to 'metacognitive' events
+mcog.vars <- cnt.vars[grep(".+_metacog", cnt.vars)]
+mcog.vars <- c('user_id', mcog.vars)
+mcog.cnt <- daily.topic.cnt %>% select(one_of(mcog.vars))
+
+mcog.stats <- compute.count.stats(mcog.cnt, active.days)
+# ratio of student with normally distrubuted proportions: 0.06 -> use median and MAD
+colnames(mcog.stats) <- c('user_id', 'median_metacog_cnt', 'mad_metacog_cnt',
+                          'metacog_days', 'metacog_prop')
+summary(mcog.stats)
+
+topic.stats <- merge(x = topic.stats, y = mcog.stats, by = 'user_id', all = TRUE)
+
+
+## from daily.topic.prop select only variables related to 'orientiring' events
+ornt.vars <- cnt.vars[grep(".+_orient", cnt.vars)]
+ornt.vars <- c('user_id', ornt.vars)
+ornt.cnt <- daily.topic.cnt %>% select(one_of(ornt.vars))
+
+ornt.stats <- compute.count.stats(ornt.cnt, active.days)
+# ratio of student with normally distrubuted proportions: 0.06 -> use median and MAD
+colnames(ornt.stats) <- c('user_id', 'median_orient_cnt', 'mad_orient_cnt',
+                          'orinet_days', 'orient_prop')
+summary(ornt.stats)
+
+topic.stats <- merge(x = topic.stats, y = ornt.stats, by = 'user_id', all = TRUE)
+
+
+## from daily.topic.prop select only variables related to 'project' events
+prj.vars <- cnt.vars[grep(".+_prj", cnt.vars)]
+prj.vars <- c('user_id', prj.vars)
+prj.cnt <- daily.topic.cnt %>% select(one_of(prj.vars))
+
+prj.stats <- compute.count.stats(prj.cnt, active.days)
+# ratio of student with normally distrubuted proportions: 0 -> use median and MAD
+colnames(prj.stats) <- c('user_id', 'median_prj_cnt', 'mad_prj_cnt',
+                         'prj_days', 'prj_prop')
+summary(prj.stats)
+
+topic.stats <- merge(x = topic.stats, y = prj.stats, by = 'user_id', all = TRUE)
+str(topic.stats)
+
+## save topic proportions statistics
+write_csv(topic.stats, 
+          "Intermediate_results/regularity_of_study/topic_counts_statistics_w2-5_7-12.csv")
 
 
 #############################################################################
@@ -499,5 +835,3 @@ write_csv(daily.gaps,
 # - average delay
 # - SD / MAD of the delay
 #############################################################################
-
-

@@ -84,11 +84,10 @@ ggplot(data = stud.per.day.df, aes(x = date, y = stud_cnt, group = 1)) +
 # create several maps, each for different cohort of students 
 ##########################################################################
 
-weekly.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins.csv")
+weekly.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins_w2-13.csv")
 weekly.counts <- weekly.counts %>%
-  select(user_id, c(72:82))
+  select(user_id, c(86:98))
 str(weekly.counts)
-colnames(weekly.counts)[2:11] <- paste0('W',c(2:5,7:12)) 
 
 ## order the data based on the total number of active days
 wcount.sorted <- weekly.counts[order(weekly.counts$tot_cnt, decreasing = T),]
@@ -129,6 +128,8 @@ counts_and_scores <- merge(x = weekly.counts, y = exam.scores[,-2],
 summary(counts_and_scores)
 # scores are missing for 9 students; remove them
 counts_and_scores <- counts_and_scores %>% filter( !is.na(SC_FE_TOT) )
+# change the names of the columns to serve better for plotting
+colnames(counts_and_scores)[2:13] <- paste0('W',2:13)
 
 ## identify the best and worst performing students
 source(file = "util_functions.R")
@@ -143,7 +144,7 @@ top20p_long <- counts_and_scores %>%
   filter(user_id %in% top20p.perf) %>%
   mutate(user_id = factor(user_id)) %>%
   mutate(user_id = reorder(user_id, SC_FE_TOT)) %>%
-  gather(key = week, value = week_cnt, W2:W12, factor_key = TRUE)
+  gather(key = week, value = week_cnt, W2:W13, factor_key = TRUE)
   
 hm.top20perc <- plot_active_days_heatmap(top20p_long)
 hm.top20perc <- hm.top20perc + 
@@ -158,7 +159,7 @@ bottom_20p_long <- counts_and_scores %>%
           filter(user_id %in% worst20p.perf) %>%
           mutate(user_id = factor(user_id)) %>%
           mutate(user_id = reorder(user_id, SC_FE_TOT)) %>%
-          gather(key = week, value = week_cnt, W2:W12, factor_key = TRUE)
+          gather(key = week, value = week_cnt, W2:W13, factor_key = TRUE)
 
 hm.bottom20perc <- plot_active_days_heatmap(bottom_20p_long)
 hm.bottom20perc <- hm.bottom20perc + 
@@ -219,7 +220,7 @@ plot_active_days_heatmap <- function(weekly_counts_long) {
             scale_fill_gradient(name = "Active days\nper week",
                                low = "white", high = "steelblue") +
             ylab("Student IDs") + 
-            xlab("\nCourse weeks (minus exam preparation weeks)") +
+            xlab("\nCourse weeks") +
             theme_grey()
   
   hm

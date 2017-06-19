@@ -547,18 +547,22 @@ get.week.topics <- function(week) {
 ## the f. computes, for each student, the number of days the student
 ## was active in each week of the course; it also computes the number
 ## of active days per week, as well as SD and entropy of weekly counts
-make.daily.counts <- function(sessions) {
+## the second argument - weeks - is a vector of weeks to be considered
+## in computations
+make.daily.counts <- function(sessions, weeks) {
   require(lubridate)
   
   ## first, change the time to Sydney time zone
   sessions$start_time <- as.POSIXct(sessions$start_time, tz = 'Australia/Sydney')
   
   students <- unique(sessions$user_id)
-  ## number of columns: 1+ 10*7 + 10
+  
+  n.weeks <- length(weeks)
+  ## number of columns: 1 + n.weeks * 7 + n.weeks
   ## user_id
-  ## 10 weeks; for each week, for each day of the week, an indicator if a student was active (10*7) 
+  ## for each week (n.weeks), for each day of the week, an indicator if a student was active (7*n.weeks) 
   ## plus, for each week, the number of days the student was active in that week 
-  s.matrix <- matrix(nrow = length(students), ncol=(1+7*10+10)) 
+  s.matrix <- matrix(nrow = length(students), ncol=(1+7*n.weeks+n.weeks)) 
   s <- 1
   
   ## vector for keeping p value of the shapiro test of normality
@@ -571,11 +575,11 @@ make.daily.counts <- function(sessions) {
     ## vector for keeping the computed counts data about the given student
     stud.all.counts <- c(stud) 
     ## vector for keeping weekly summaries = number of engaged days for each week
-    stud.weekly.counts <- vector(mode = 'numeric', length = 10)
+    stud.weekly.counts <- vector(mode = 'numeric', length = n.weeks)
     c <- 1
     
     ## consider each week individualy
-    for(w in c(2:5,7:12)) {
+    for(w in weeks) {
       stud.weekly.ses <- subset(stud.sessions, week==w)
       weekday.sessions <- vector(mode = 'numeric', length = 7)
       for(d in 1:7) 
@@ -599,11 +603,14 @@ make.daily.counts <- function(sessions) {
   print(paste("Proportion of students with normal dist for weekly counts of engaged days:", above_0.05/length(students)))
   
   counts.df <- data.frame(s.matrix)
+  ## create column names
   weekdays <- c('Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat') 
-  colnames(counts.df) <- c('user_id', 
-                           paste0('W2_',weekdays), paste0('W3_',weekdays), paste0('W4_',weekdays), paste0('W5_',weekdays),
-                           paste0('W7_',weekdays), paste0('W8_',weekdays), paste0('W9_',weekdays), paste0('W10_',weekdays),
-                           paste0('W11_',weekdays), paste0('W12_',weekdays), paste0('W',c(2:5,7:12),'_cnt'))
+  cnames <- 'user_id'
+  for(w in weeks)
+    cnames <- c(cnames, paste0('W',w,'_', weekdays))
+  cnames <- c(cnames, paste0('W',weeks,'_cnt'))
+  colnames(counts.df) <- cnames
+  
   counts.df
 }
 
@@ -657,6 +664,253 @@ gaps.between.consecutive.active.days <- function(daily_counts) {
   result.df
 }
 
+
+## the f. computes, for each student and each day of the course the number of 
+## different kinds of resources the student used that day 
+## the second argument - weeks - is a vector of weeks to be considered
+## in computations
+daily.counts.of.resource.use <- function(events, weeks) {
+  require(lubridate)
+  
+  ## first, change the time to Sydney time zone
+  events$timestamp <- as.POSIXct(events$timestamp, tz = 'Australia/Sydney')
+  
+  students <- unique(events$user_id)
+  
+  n.weeks <- length(weeks)
+  ## number of columns: 1 + n.weeks * 7 (days) * 5 (resource types)
+  ## user_id
+  ## for each week (n.weeks), for each day of the week, we need 5 variables (counts),
+  ## one for each type of resource (EXE, MCQ, METACOG, RES, VIDEO)
+  s.matrix <- matrix(nrow = length(students), ncol=(1 + n.weeks*7*5)) 
+  s <- 1
+  
+  for(stud in students) {
+    stud.events <- subset(events, user_id==stud)
+    
+    ## vector for keeping the computed counts data about the given student
+    stud.all.counts <- c(stud) 
+    
+    ## consider each week individualy
+    for(w in weeks) {
+      stud.weekly.events <- subset(stud.events, week==w)
+      # vector keeping counts for each day of a week
+      daily.res.counts <- vector(mode = 'numeric', length = 7*5) # 7 days * 5 resource types
+      c <- 1 # counter for the daily.res.counts vector
+      
+      for(d in 1:7) {
+        daily.events <- stud.weekly.events %>% filter( wday(timestamp, label=F)==d )
+        if (nrow(daily.events) == 0) {
+          for(j in 0:4)
+            daily.res.counts[c+j] <- 0 # set zeros for all (5) types of resources 
+        } else {
+          daily.res.counts[c] <- nrow(daily.events %>% filter( res_type == "MCQ"))
+          daily.res.counts[c+1] <- nrow(daily.events %>% filter( res_type == "EXE"))
+          daily.res.counts[c+2] <- nrow(daily.events %>% filter( res_type == "VIDEO"))
+          daily.res.counts[c+3] <- nrow(daily.events %>% filter( res_type == "RES"))
+          daily.res.counts[c+4] <- nrow(daily.events %>% filter( res_type == "METACOG"))
+        }
+        c <- c + 5  
+      }
+        
+      stud.all.counts <- c(stud.all.counts, daily.res.counts)  
+      
+    }
+    
+    s.matrix[s,] <- stud.all.counts
+    s <- s + 1
+    
+  }
+  
+  counts.df <- data.frame(s.matrix)
+  ## create column names
+  res.types <- c('MCQ', 'EXE', 'VIDEO', 'RES', 'METACOG')
+  weekday.res <- list()
+  weekday.res[[1]] <- paste0('Sun','_', res.types)
+  weekday.res[[2]] <- paste0('Mon','_', res.types)
+  weekday.res[[3]] <- paste0('Tue','_', res.types)
+  weekday.res[[4]] <- paste0('Wed','_', res.types)
+  weekday.res[[5]] <- paste0('Thu','_', res.types)
+  weekday.res[[6]] <- paste0('Fri','_', res.types)
+  weekday.res[[7]] <- paste0('Sat','_', res.types)
+  cnames <- 'user_id'
+  for(w in weeks) {
+    for(d in 1:7)
+      cnames <- c(cnames, paste0('W',w,'_', weekday.res[[d]]))
+  }
+  colnames(counts.df) <- cnames
+  
+  counts.df
+}
+
+
+# the f. computes the following statistics for the given counts:
+# - median 
+# - MAD 
+# - number of days with positive counts
+# - proportion of days with positive counts
+# When computing these statistics, only the days when a student was active are considered,
+# hence the 2nd argument of the function
+compute.count.stats <- function(counts, active.days) {
+  counts.matrix <- matrix(nrow = nrow(counts), ncol = 5)
+  shapiro.p.vals <- vector(mode = 'numeric', length = nrow(counts))
+  
+  for(s in 1:nrow(counts)) {
+    stud.data <- counts$user_id[s] 
+    for(d in 2:ncol(counts)) {
+      if (active.days[s,d] > 0) stud.data <- c(stud.data, counts[s,d])
+    }
+    counts.matrix[s,1] <- stud.data[1]
+    stud.data <- stud.data[-1]
+    counts.matrix[s,2] <- median(stud.data) 
+    counts.matrix[s,3] <- mad(stud.data) 
+    counts.matrix[s,4] <- length(which(stud.data>0)) 
+    counts.matrix[s,5] <- counts.matrix[s,4]/length(stud.data) 
+    # was used and the number of active days
+    if ( (length(unique(stud.data)) > 1) & (length(stud.data) >= 3) )
+      shapiro.p.vals[s] <- shapiro.test(stud.data)$p.value
+    else shapiro.p.vals[s] <- NA
+  }
+  
+  above_0.05 <- length(which(shapiro.p.vals>0.05))
+  print(paste("ratio of student with normally distrubuted counts:", above_0.05/nrow(counts)))
+  
+  stats <- data.frame(counts.matrix)
+  stats
+}
+
+
+
+## the f. computes, for each student and each day of the course 
+## the number of events / actions that were:
+## - 'ontopic' - the topic associated with the action is the topic of the current week
+## - 'revisiting' - the topic associated with the action is the topic of one of the previous weeks
+## - 'metacognitive' - the topic associated with the action is one of the following:
+##    'ORG', 'DBOARD', 'STRAT', 'STUDYKIT'
+## - 'orientiring' - the topic associated with the action is one of the following:
+##    'HOME', 'HOF', 'SEARCH', 'TEA', 'EXAM', 'W01'-'W13'
+## - 'project' - the action is related to project work
+##
+## the second argument - weeks - is a vector of weeks to be considered in computations
+daily.topic.counts <- function(events, weeks) {
+  require(lubridate)
+  
+  ## first, change the time to Sydney time zone
+  events$timestamp <- as.POSIXct(events$timestamp, tz = 'Australia/Sydney')
+
+  students <- unique(events$user_id)
+  
+  n.weeks <- length(weeks)
+  ## number of columns: 1 + n.weeks * 7 (days) * 5 (topic foci)
+  ## user_id
+  ## for each week (n.weeks), for each day of the week, we need 5 variables (proportions),
+  ## one for each topic foci (ontopic, revisiting, metacog, orientiring)
+  s.matrix <- matrix(nrow = length(students), ncol=(1 + n.weeks*7*5)) 
+  s <- 1
+  
+  for(stud in students) {
+    stud.events <- subset(events, user_id==stud)
+    
+    ## vector for keeping the computed counts data about the given student
+    stud.all.counts <- c(stud) 
+    
+    ## consider each week individualy
+    for(w in weeks) {
+      stud.weekly.events <- subset(stud.events, week==w)
+      # vector keeping counts for each day of a week
+      daily.counts <- vector(mode = 'numeric', length = 7*5) # 7 days * 5 topic foci
+      c <- 1 # counter for the daily.prop vector
+      
+      week.topic <- get.week.study.topic(w) # topic of the current week
+      prev.topics <- get.prev.weeks.topics(w) # topic of the previous weeks
+      
+      for(d in 1:7) {
+        daily.events <- stud.weekly.events %>% filter( wday(timestamp, label=F)==d )
+        daily.tot <- nrow(daily.events)
+        if (daily.tot == 0) {
+          for(j in 0:3)
+            daily.counts[c+j] <- 0 # set zeros for all (4) types of topic foci 
+        } else {
+          
+          daily.counts[c] <- nrow(daily.events %>% filter(topic == week.topic)) # ontopic counts
+          daily.counts[c+1] <- nrow(daily.events %>% filter(topic %in% prev.topics)) # revisiting counts
+          daily.counts[c+2] <- nrow(daily.events %>% filter(topic == "METACOG")) # metacognitive counts
+          daily.counts[c+3] <- nrow(daily.events %>% filter(topic == "ORIENTIRING")) # orientiring counts
+          daily.counts[c+4] <- nrow(daily.events %>% filter(topic == "PRJ")) # project work counts
+        
+        }
+        c <- c + 5  
+      }
+      
+      stud.all.counts <- c(stud.all.counts, daily.counts)  
+      
+    }
+    
+    s.matrix[s,] <- stud.all.counts
+    s <- s + 1
+    
+  }
+  
+  counts.df <- data.frame(s.matrix)
+  ## create column names
+  topic.foci <- c('ontopic', 'revisit', 'metacog', 'orient', 'prj')
+  wd.topic <- list()
+  wd.topic[[1]] <- paste0('Sun','_', topic.foci)
+  wd.topic[[2]] <- paste0('Mon','_', topic.foci)
+  wd.topic[[3]] <- paste0('Tue','_', topic.foci)
+  wd.topic[[4]] <- paste0('Wed','_', topic.foci)
+  wd.topic[[5]] <- paste0('Thu','_', topic.foci)
+  wd.topic[[6]] <- paste0('Fri','_', topic.foci)
+  wd.topic[[7]] <- paste0('Sat','_', topic.foci)
+  cnames <- 'user_id'
+  for(w in weeks) {
+    for(d in 1:7)
+      cnames <- c(cnames, paste0('W',w,'_', wd.topic[[d]]))
+  }
+  colnames(counts.df) <- cnames
+  
+  counts.df
+}
+
+
+get.week.study.topic <- function(week) {
+  switch(week, NA, 'COD', 'DRM', 'CDL', 'SDL', NA, 'ARC', 'ISA', 'ASP', 'ADM', 'HLP', 'HLP')
+}
+
+get.prev.weeks.topics <- function(week) {
+  topics <- c('CST', 'COD', 'DRM', 'CDL', 'SDL', 'ARC', 'ISA', 'ASP', 'ADM', 'HLP') 
+  t <- switch(week, NA, topics[1], topics[1:2], topics[1:3], topics[1:4], topics[1:5],
+              topics[1:5], topics[1:6], topics[1:7], topics[1:8], topics[1:9], topics[1:9])
+  t
+}
+
+
+
+compute.topic.cnt.stats <- function(topic.prop, active.days) {
+  m <- matrix(nrow = nrow(topic.prop), ncol = 3)
+  shapiro.p.vals <- vector(mode = 'numeric', length = nrow(topic.prop))
+  
+  for(s in 1:nrow(topic.prop)) {
+    stud.data <- topic.prop$user_id[s] 
+    for(d in 2:ncol(topic.prop)) {
+      if (active.days[s,d] > 0) stud.data <- c(stud.data, topic.prop[s,d])
+    }
+    m[s,1] <- stud.data[1]
+    stud.data <- stud.data[-1]
+    m[s,2] <- median(stud.data) # median proportion of the given topic
+    m[s,3] <- mad(stud.data) # MAD of the given topic proportion
+    
+    if ( (length(unique(stud.data)) > 1) & (length(stud.data) >= 3) )
+      shapiro.p.vals[s] <- shapiro.test(stud.data)$p.value
+    else shapiro.p.vals[s] <- NA
+  }
+  
+  above_0.05 <- length(which(shapiro.p.vals>0.05))
+  print(paste("ratio of student with normally distrubuted proportions:", above_0.05/nrow(topic.prop)))
+  
+  prop.stats <- data.frame(m)
+  prop.stats
+}
 
 ## f. for Winsorizing a variable  
 ## taken from: https://www.r-bloggers.com/winsorization/
