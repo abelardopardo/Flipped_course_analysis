@@ -745,6 +745,7 @@ daily.counts.of.resource.use <- function(events, weeks) {
 
 
 # the f. computes the following statistics for the given counts:
+# - total count
 # - median 
 # - MAD 
 # - number of days with positive counts
@@ -752,7 +753,7 @@ daily.counts.of.resource.use <- function(events, weeks) {
 # When computing these statistics, only the days when a student was active are considered,
 # hence the 2nd argument of the function
 compute.count.stats <- function(counts, active.days) {
-  counts.matrix <- matrix(nrow = nrow(counts), ncol = 5)
+  counts.matrix <- matrix(nrow = nrow(counts), ncol = 6)
   shapiro.p.vals <- vector(mode = 'numeric', length = nrow(counts))
   
   for(s in 1:nrow(counts)) {
@@ -762,10 +763,11 @@ compute.count.stats <- function(counts, active.days) {
     }
     counts.matrix[s,1] <- stud.data[1]
     stud.data <- stud.data[-1]
-    counts.matrix[s,2] <- median(stud.data) 
-    counts.matrix[s,3] <- mad(stud.data) 
-    counts.matrix[s,4] <- length(which(stud.data>0)) 
-    counts.matrix[s,5] <- counts.matrix[s,4]/length(stud.data) 
+    counts.matrix[s,2] <- sum(stud.data)
+    counts.matrix[s,3] <- median(stud.data) 
+    counts.matrix[s,4] <- mad(stud.data) 
+    counts.matrix[s,5] <- length(which(stud.data>0)) 
+    counts.matrix[s,6] <- counts.matrix[s,5]/length(stud.data) 
     # was used and the number of active days
     if ( (length(unique(stud.data)) > 1) & (length(stud.data) >= 3) )
       shapiro.p.vals[s] <- shapiro.test(stud.data)$p.value
@@ -884,33 +886,6 @@ get.prev.weeks.topics <- function(week) {
   t
 }
 
-
-
-compute.topic.cnt.stats <- function(topic.prop, active.days) {
-  m <- matrix(nrow = nrow(topic.prop), ncol = 3)
-  shapiro.p.vals <- vector(mode = 'numeric', length = nrow(topic.prop))
-  
-  for(s in 1:nrow(topic.prop)) {
-    stud.data <- topic.prop$user_id[s] 
-    for(d in 2:ncol(topic.prop)) {
-      if (active.days[s,d] > 0) stud.data <- c(stud.data, topic.prop[s,d])
-    }
-    m[s,1] <- stud.data[1]
-    stud.data <- stud.data[-1]
-    m[s,2] <- median(stud.data) # median proportion of the given topic
-    m[s,3] <- mad(stud.data) # MAD of the given topic proportion
-    
-    if ( (length(unique(stud.data)) > 1) & (length(stud.data) >= 3) )
-      shapiro.p.vals[s] <- shapiro.test(stud.data)$p.value
-    else shapiro.p.vals[s] <- NA
-  }
-  
-  above_0.05 <- length(which(shapiro.p.vals>0.05))
-  print(paste("ratio of student with normally distrubuted proportions:", above_0.05/nrow(topic.prop)))
-  
-  prop.stats <- data.frame(m)
-  prop.stats
-}
 
 ## f. for Winsorizing a variable  
 ## taken from: https://www.r-bloggers.com/winsorization/

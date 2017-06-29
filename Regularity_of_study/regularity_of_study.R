@@ -543,6 +543,7 @@ write_csv(daily.res.counts,
 # - metacognitive items (METACOG)
 #
 # Computed statistics:
+# - number of resources (of the give type) used during the student's active days
 # - median number of resources (of the give type) used during the student's active days
 # - MAD of resources (of the give type) used during the student's active days
 # - number of days when resources of the given type were used
@@ -582,7 +583,7 @@ video.vars <- c('user_id', video.vars)
 video.counts <- daily.res.counts %>% select(one_of(video.vars))
 
 video.stats <- compute.count.stats(video.counts, active.days)
-colnames(video.stats) <- c('user_id', 'median_video_cnt', 'mad_video_cnt', 
+colnames(video.stats) <- c('user_id', 'tot_video_cnt', 'median_video_cnt', 'mad_video_cnt', 
                            'days_video_used', 'prop_video_used')
 summary(video.stats)
 length(which(video.stats$mad_video_cnt>0))
@@ -598,7 +599,7 @@ exe.counts <- daily.res.counts %>% select(one_of(exe.vars))
 
 exe.stats <- compute.count.stats(exe.counts, active.days)
 # Ratio of student with normally distrubuted counts: 0.039 -> use median and MAD
-colnames(exe.stats) <- c('user_id', 'median_exe_cnt', 'mad_exe_cnt', 
+colnames(exe.stats) <- c('user_id', 'tot_exe_cnt', 'median_exe_cnt', 'mad_exe_cnt', 
                            'days_exe_used', 'prop_exe_used')
 summary(exe.stats)
 
@@ -613,7 +614,7 @@ mcq.counts <- daily.res.counts %>% select(one_of(mcq.vars))
 
 mcq.stats <- compute.count.stats(mcq.counts, active.days)
 # Ration of student with normally distrubuted counts: 0.004 -> use median and MAD
-colnames(mcq.stats) <- c('user_id', 'median_mcq_cnt', 'mad_mcq_cnt', 
+colnames(mcq.stats) <- c('user_id', 'tot_mcq_cnt', 'median_mcq_cnt', 'mad_mcq_cnt', 
                          'days_mcq_used', 'prop_mcq_used')
 summary(mcq.stats)
 ## too many zeros for median_mcq_cnt and mad_mcq_cnt, let's check
@@ -633,7 +634,7 @@ mcog.counts <- daily.res.counts %>% select(one_of(mcog.vars))
 
 mcog.stats <- compute.count.stats(mcog.counts, active.days)
 # Ratio of student with normally distrubuted counts: 0.002 -> use median and MAD
-colnames(mcog.stats) <- c('user_id', 'median_mcog_cnt', 'mad_mcog_cnt', 
+colnames(mcog.stats) <- c('user_id', 'tot_mcog_cnt', 'median_mcog_cnt', 'mad_mcog_cnt', 
                          'days_mcog_used', 'prop_mcog_used')
 summary(mcog.stats)
 ## again, too many zeros for median and mad values; let's check
@@ -653,7 +654,7 @@ res.counts <- daily.res.counts %>% select(one_of(res.vars))
 
 res.stats <- compute.count.stats(res.counts, active.days)
 # Ratio of student with normally distrubuted counts: 0.064 -> use median and MAD
-colnames(res.stats) <- c('user_id', 'median_res_cnt', 'mad_res_cnt', 
+colnames(res.stats) <- c('user_id', 'tot_res_cnt', 'median_res_cnt', 'mad_res_cnt', 
                           'days_res_used', 'prop_res_used')
 summary(res.stats)
 
@@ -725,6 +726,7 @@ write_csv(daily.topic.cnt,
 # - 'project' 
 #
 # Computed statistics:
+# - total number of learning actions (during active days) with a particular topic focus
 # - median number of learning actions per active day with a particular topic focus 
 # - MAD of learning actions per active day with a particular topic focus
 # - number of days with at least one action with particular topic focus 
@@ -758,7 +760,7 @@ ontopic.cnt <- daily.topic.cnt %>% select(one_of(ontopic.vars))
 
 ontopic.stats <- compute.count.stats(ontopic.cnt, active.days)
 # ratio of student with normally distrubuted proportions: 0.01 -> use median and MAD
-colnames(ontopic.stats) <- c('user_id', 'median_ontopic_cnt', 'mad_ontopic_cnt', 
+colnames(ontopic.stats) <- c('user_id', 'tot_ontopic_cnt', 'median_ontopic_cnt', 'mad_ontopic_cnt', 
                              'ontopic_days', 'ontopic_prop')
 summary(ontopic.stats)
 
@@ -770,7 +772,7 @@ rev.cnt <- daily.topic.cnt %>% select(one_of(rev.vars))
 
 rev.stats <- compute.count.stats(rev.cnt, active.days)
 # ratio of student with normally distrubuted proportions: 0.008 -> use median and MAD
-colnames(rev.stats) <- c('user_id', 'median_revisit_cnt', 'mad_revisit_cnt',
+colnames(rev.stats) <- c('user_id', 'tot_revisit_cnt', 'median_revisit_cnt', 'mad_revisit_cnt',
                          'revisit_days', 'revisit_prop')
 summary(rev.stats)
 
@@ -785,7 +787,7 @@ mcog.cnt <- daily.topic.cnt %>% select(one_of(mcog.vars))
 
 mcog.stats <- compute.count.stats(mcog.cnt, active.days)
 # ratio of student with normally distrubuted proportions: 0.06 -> use median and MAD
-colnames(mcog.stats) <- c('user_id', 'median_metacog_cnt', 'mad_metacog_cnt',
+colnames(mcog.stats) <- c('user_id', 'tot_metacog_cnt', 'median_metacog_cnt', 'mad_metacog_cnt',
                           'metacog_days', 'metacog_prop')
 summary(mcog.stats)
 
@@ -799,7 +801,7 @@ ornt.cnt <- daily.topic.cnt %>% select(one_of(ornt.vars))
 
 ornt.stats <- compute.count.stats(ornt.cnt, active.days)
 # ratio of student with normally distrubuted proportions: 0.06 -> use median and MAD
-colnames(ornt.stats) <- c('user_id', 'median_orient_cnt', 'mad_orient_cnt',
+colnames(ornt.stats) <- c('user_id', 'tot_orient_cnt', 'median_orient_cnt', 'mad_orient_cnt',
                           'orinet_days', 'orient_prop')
 summary(ornt.stats)
 
@@ -813,7 +815,7 @@ prj.cnt <- daily.topic.cnt %>% select(one_of(prj.vars))
 
 prj.stats <- compute.count.stats(prj.cnt, active.days)
 # ratio of student with normally distrubuted proportions: 0 -> use median and MAD
-colnames(prj.stats) <- c('user_id', 'median_prj_cnt', 'mad_prj_cnt',
+colnames(prj.stats) <- c('user_id', 'tot_prj_cnt', 'median_prj_cnt', 'mad_prj_cnt',
                          'prj_days', 'prj_prop')
 summary(prj.stats)
 
@@ -824,6 +826,180 @@ str(topic.stats)
 write_csv(topic.stats, 
           "Intermediate_results/regularity_of_study/topic_counts_statistics_w2-5_7-12.csv")
 
+
+#######################################################################################
+# Compute engagement indicators based on the different kinds of resources students used
+# during their active days; the types of resources considered: 
+# - video
+# - exercises
+# - MCQs
+# - reading materials (RES)
+# - metacognitive items (METACOG)
+#
+# Indicators are to be computed at the week level, based on the following principle:
+# a score of one is given to a student (for a given week), if he/she used certain kind 
+# of resurce (e.g. video) more than the average (median) use of the that resource type
+# in the given week
+##########################################################################################
+
+daily.res.counts <- read.csv("Intermediate_results/regularity_of_study/daily_counts_of_resource_use_w2-13.csv")
+count.vars <- colnames(daily.res.counts)
+
+## compute resource use at the week level
+res_types <- c('MCQ', 'EXE', 'VIDEO', 'RES', 'METACOG')
+weekly.counts <- data.frame(user_id=daily.res.counts$user_id)
+for(w in 2:13) {
+  for(rt in res_types) {
+    pattern <- paste0('W',w,"_\\w{3}_",rt)
+    rt.vars <- count.vars[grep(pattern, count.vars)]
+    rt.vars <- c('user_id', rt.vars)
+    rt.counts <- daily.res.counts %>% select(one_of(rt.vars))
+    rt.counts$sum <- rowSums(rt.counts[,-1])
+    colnames(rt.counts)[ncol(rt.counts)] <- paste0('W',w,'_',rt,'_tot')
+    weekly.counts <- merge(x = weekly.counts, y = rt.counts[,c(1,ncol(rt.counts))], 
+                           by = "user_id", all = TRUE)
+  }
+}
+
+## compute weekly average values for each week and each resource type
+## these will be the mean / median values of each column of the weekly.counts df
+## first check if variables are normally distributed
+apply(weekly.counts %>% select(-user_id), 2, shapiro.test)
+# no -> compute median
+weekly.rt.median <- apply(weekly.counts %>% select(-user_id), 2, median)
+
+## for each week and each resource type, give student score 1 if his/her counts
+## are above the median value for that week and the resource type 
+m <- matrix(nrow = nrow(weekly.counts), ncol = ncol(weekly.counts)-1)
+cnt <- 1 
+for(s in weekly.counts$user_id) {
+  stud_data <- weekly.counts %>% filter(user_id==s) %>% select(-user_id) %>% as.numeric()
+  m[cnt,] <- (stud_data > weekly.rt.median) * 1 # multiplying with 1 to transform into number
+  cnt <- cnt + 1
+}
+rt.indicators <- data.frame(m)
+rt.indicators <- as.data.frame(cbind(user_id=weekly.counts$user_id, rt.indicators))
+
+# create column names
+c.names <- 'user_id'
+for(w in 2:13) {
+  c.names <- c(c.names, paste0('W', w, '_', res_types, '_bin'))
+}
+colnames(rt.indicators) <- c.names
+
+## for each type of resource, compute the number of weeks when it was used 
+## above the median level of use 
+m <- matrix(nrow = nrow(rt.indicators), ncol = (1 + length(res_types)))
+c <- 1
+for(s in rt.indicators$user_id) {
+  stud.data <- rt.indicators %>% filter(user_id==s)
+  res.counts <- s
+  for(rt in res_types) {
+    pattern <- paste0("W\\d{1,2}_", rt, "_bin")
+    rt.c.names <- c.names[grep(pattern, c.names)]
+    w.cnt <- stud.data %>% select(one_of(rt.c.names)) %>% as.vector() 
+    res.counts <- c(res.counts, sum(w.cnt))
+  }
+  m[c,] <- res.counts
+  c <- c + 1
+}
+rt.sum.indicators <- data.frame(m)
+colnames(rt.sum.indicators) <- c('user_id', paste0(res_types, "_ind")) 
+head(rt.sum.indicators)
+
+## save these indicators
+write.csv(rt.sum.indicators, "Intermediate_results/regularity_of_study/res_use_indicators_w2-13.csv",
+          quote = FALSE, row.names = FALSE)
+
+
+#######################################################################################
+# Compute engagement indicators based on the different kinds of 'topic focus' students 
+# had during their active days; the considered kinds of topic focus: 
+# - 'ontopic' 
+# - 'revisiting' 
+# - 'metacognitive' 
+# - 'orientiring' 
+# - 'project' 
+#
+# Indicators are to be computed at the week level, based on the following principle:
+# a score of one is given to a student (for a given week), if his/her number of events 
+# related to a particular topic type (e.g. revisiting) was above the average (median) 
+# number of events with that topic type in the given week
+#
+# Weeks 6 and 13 are excluded from these computations, as during these weeks one 
+# can expect  different behavioral patterns than usual
+##########################################################################################
+
+daily.topic.cnt <- read.csv("Intermediate_results/regularity_of_study/daily_topic_counts_w2-5_7-12.csv")
+count.vars <- colnames(daily.topic.cnt)
+
+## compute topic focus at the week level
+topic_types <- c('ontopic', 'revisit', 'metacog', 'orient', 'prj')
+weekly.counts <- data.frame(user_id=daily.topic.cnt$user_id)
+for(w in c(2:5,7:12)) {
+  for(tt in topic_types) {
+    pattern <- paste0('W',w,"_\\w{3}_",tt)
+    tt.vars <- count.vars[grep(pattern, count.vars)]
+    tt.vars <- c('user_id', tt.vars)
+    tt.counts <- daily.topic.cnt %>% select(one_of(tt.vars))
+    tt.counts$sum <- rowSums(tt.counts[,-1])
+    colnames(tt.counts)[ncol(tt.counts)] <- paste0('W',w,'_',tt,'_tot')
+    weekly.counts <- merge(x = weekly.counts, y = tt.counts[,c(1,ncol(tt.counts))], 
+                           by = "user_id", all = TRUE)
+  }
+}
+
+## compute weekly average values for each week and each topic type
+## these will be the mean / median values of each column of the weekly.counts df
+## first check if variables are normally distributed
+apply(weekly.counts %>% select(-c(user_id, ends_with("prj_tot"))), 2, shapiro.test)
+# no -> compute median
+weekly.tt.median <- apply(weekly.counts %>% select(-user_id), 2, median)
+
+## for each week and each topic type, give student score 1 if his/her counts
+## are above the median value for that week and the topic type 
+m <- matrix(nrow = nrow(weekly.counts), ncol = ncol(weekly.counts)-1)
+cnt <- 1 
+for(s in weekly.counts$user_id) {
+  stud_data <- weekly.counts %>% filter(user_id==s) %>% select(-user_id) %>% as.numeric()
+  m[cnt,] <- (stud_data > weekly.tt.median) * 1 # multiplying with 1 to transform into number
+  cnt <- cnt + 1
+}
+topic.indicators <- data.frame(m)
+topic.indicators <- as.data.frame(cbind(user_id=weekly.counts$user_id, topic.indicators))
+
+# create column names
+c.names <- 'user_id'
+for(w in c(2:5,7:12)) {
+  c.names <- c(c.names, paste0('W', w, '_', topic_types, '_bin'))
+}
+colnames(topic.indicators) <- c.names
+
+
+## for each topic type, compute the number of weeks when it was present 
+## above the median level 
+m <- matrix(nrow = nrow(topic.indicators), ncol = (1 + length(topic_types)))
+c <- 1
+for(s in topic.indicators$user_id) {
+  stud.data <- topic.indicators %>% filter(user_id==s)
+  t.counts <- s
+  for(tt in topic_types) {
+    pattern <- paste0("W\\d{1,2}_", tt, "_bin")
+    tt.c.names <- c.names[grep(pattern, c.names)]
+    w.cnt <- stud.data %>% select(one_of(tt.c.names)) %>% as.vector() 
+    t.counts <- c(t.counts, sum(w.cnt))
+  }
+  m[c,] <- t.counts
+  c <- c + 1
+}
+topic.sum.indicators <- data.frame(m)
+colnames(topic.sum.indicators) <- c('user_id', paste0(topic_types, "_ind")) 
+head(topic.sum.indicators)
+
+## save these indicators
+write.csv(topic.sum.indicators, 
+          "Intermediate_results/regularity_of_study/topic_based_indicators_w2-5_7-12.csv",
+          quote = FALSE, row.names = FALSE)
 
 #############################################################################
 # Potential additional features:
