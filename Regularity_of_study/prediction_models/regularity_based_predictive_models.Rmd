@@ -1,0 +1,1191 @@
+---
+title: "Predictive models based on various indicators of student engagement and/or regularity of study"
+output: html_notebook
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+
+# load the required libraries and functions
+library(tidyverse)
+library(knitr)
+library(car)
+#install.packages('bootstrap')
+library(bootstrap)
+#install.packages("DAAG")
+library(DAAG)
+
+# for correlation plots
+source("https://raw.githubusercontent.com/briatte/ggcorr/master/ggcorr.R")
+```
+
+```{r include=FALSE}
+## some auxiliary functions
+
+plot.correlations <- function(dataset) {
+  ggcorr(dataset, method = c("complete","spearman"), 
+       #      geom = "circle", min_size = 0, max_size = 15,
+       label = TRUE, label_size = 3.5,
+       hjust = 0.85, size = 4, layout.exp = 1)
+}
+
+
+## the f. scales the given feature set by standardizing them
+## as features are expected to have outliers, instead of using mean and SD, 
+## median and Interquartile Range (IQR) are used, as suggested here:
+## http://scikit-learn.org/stable/modules/preprocessing.html#scaling-data-with-outliers
+scale.features <- function(features) {
+  m <- matrix(nrow = nrow(features), ncol = ncol(features), byrow = FALSE)
+  i <- 1
+  for(f in features) {
+    if ( IQR(x = f, na.rm = T) != 0 )
+      m[,i] <- (f - median(f, na.rm = T))/IQR(f, na.rm = T)
+    else
+      m[,i] <- 0
+    i <- i + 1  
+  }
+  scaled.data <- data.frame(m)
+  colnames(scaled.data) <- colnames(features)
+  scaled.data
+}
+
+
+## the f. draws a plot that alls for checking if the homoschedasticity requirement is
+## satisfied; what we want to see on the plot is that the smooth line (residual deviation from the best-fit line) matches as much as possible the dashed line (no deviation from the best-fit line)
+check.homoschedasticity <- function(lmod) {
+  plot(fitted(lmod), resid(lmod,type="pearson"), col="blue", 
+     xlab = "Fitted Values", ylab = "Residuals") 
+  abline(h=0,lwd=2)
+  lines(smooth.spline(fitted(lmod), residuals(lmod)), lwd=2, col='red')
+}
+
+## f. for assessing R2 shrinkage using 10-Fold Cross-Validation
+## the f. returns a vector of 2 elements: raw R2 and cross-validated R2
+## (based on instructions from: http://www.statmethods.net/stats/regression.html)
+compute.CV.R2 <- function(features, outcome, lmod) {
+  
+  # define auxiliary functions 
+  theta.fit <- function(x,y){lsfit(x,y)}
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+
+  # matrix of predictors
+  X <- as.matrix(features)
+  # vector of predicted values
+  y <- as.matrix(outcome) 
+
+  results <- crossval(X, y, theta.fit, theta.predict, ngroup=10)
+  raw.R2 <- cor(y, lmod$fitted.values)**2 
+  cv.R2 <- cor(y, results$cv.fit)**2
+  c(raw_R2=raw.R2, cv_R2=cv.R2)
+  
+}
+
+## f. for computing 10-fold cross-validated standard error of prediction
+## (based on instructions from: http://www.statmethods.net/stats/regression.html)
+compute.CV.stand.error <- function(features, lmod) {
+  cv.out <- cv.lm(data=features, form.lm = lmod, m = 10) # 10 fold cross-validation
+  # take the square root of the MSE to get the standard error of the estimate
+  sqrt(attr(x = cv.out, which = "ms"))
+}
+```
+
+
+# Models based on 'basic' indicators of engagement and regularity of study 
+
+Loading the required data
+```{r results='hide'}
+daily.counts <- read.csv("Intermediate_results/regularity_of_study/weekly_counts_of_daily_logins_w2-13.csv")
+#colnames(daily.counts)
+
+weekly.counts <- daily.counts %>%
+  select(user_id, W2_cnt:W13_cnt, tot_cnt, weekly_entropy)
+# str(weekly.counts)
+
+daily.gaps <- read.csv("Intermediate_results/regularity_of_study/gaps_between_consecutive_logins_w2-13.csv")
+# str(daily.gaps)
+# daily gaps do not have normal distribution, so, median will be used
+
+# merge weekly counts and median time gap 
+counts.data <- merge(x = weekly.counts, y = daily.gaps %>% select(user_id, median_gap),
+                     by = 'user_id', all = TRUE)
+
+exam.scores <- read.csv(file = "Intermediate_results/exam_scores_with_student_ids.csv")
+# remove email data
+exam.scores <- exam.scores %>% select(-2)
+# str(exam.scores)
+
+# merge counts data with exam scores
+counts.data <- merge(x = counts.data, y = exam.scores, by.x = 'user_id', by.y = 'USER_ID', 
+                     all.x = T, all.y = F)
+
+#summary(counts.data)
+# 9 NA values for exam scores; remove them
+counts.data <- counts.data %>% filter( is.na(SC_FE_TOT)==FALSE )
+```
+
+### Model 1: predictors are the same as those used in the latest cluster model
+
+This means that predictors are counts of active days (days when a student had at least one learning session) per week, entropy of weekly active days, and median gap between two consecutive active days. 
+
+```{r}
+lm1.data <- counts.data %>% select(-c(tot_cnt, user_id, SC_MT_TOT))
+lm1 <- lm(SC_FE_TOT ~ ., data = lm1.data)
+summary(lm1)
+```
+It's interesting that counts for only 3 weeks are significant and that all three weeks are in the 2nd part of the course (after midterm exam): 
+
+* one day more of study in week 8 contributes 1.09 points to the final exam score; 
+* one day more in week 10 controbutes 1.08 points, and 
+* one active day more in week 13 adds 0.86 points.
+
+R-squared is 0.283	(adjusted R2: 0.261).
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm1$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm1)
+par(mfrow=c(1,1)) # Change back to 1 x 1
+# there are few potential influential points: 80, 50, 459
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:14)
+  print(cor.test(lm1.data[,c], lm1$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm1)
+# OK, values below or equal to 2
+```
+The assumptions are satisifed, though there are few potentially influential points that might need to be considered if this model is to be used 
+
+
+
+### Model 2: Like Model 1, but instead of weekly counts, uses total number of active days during the course
+
+```{r}
+lm2.data <- counts.data %>% select(tot_cnt, median_gap, weekly_entropy, SC_FE_TOT)
+lm2 <- lm(SC_FE_TOT ~ ., data = lm2.data)
+summary(lm2)
+```
+
+The total number of active days is the only significant predictor, and it is highly significant. Each additional active day contributes 0.4 points to the final exam score.
+
+R-squared is  0.2557	(adjusted R2: 0.251). 
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm2$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm2)
+par(mfrow=c(1,1)) # Change back to 1 x 1
+# both OK
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:3)
+  print(cor.test(lm2.data[,c], lm2$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm2)
+# OK, values below or equal to 2
+```
+All assumptions are satisified.
+
+
+### Model 3: Number of study sessions per week, weekly entropy of study session counts, and time gap between consecutive sessions
+
+Loading the required data
+```{r results='hide'}
+weekly.sessions <- read.csv("Intermediate_results/regularity_of_study/weekly_session_props.csv")
+#str(weekly.sessions)
+
+ses.gap.data <- read.csv("Intermediate_results/regularity_of_study/inter-session_time_intervals.csv") #str(ses.gap.data)
+
+lm3.data <- merge(x = weekly.sessions %>% select(count_w2:count_w12, weekly_entropy, user_id),
+                  y = ses.gap.data %>% select(user_id, median_s_gap),
+                  by = 'user_id', all = TRUE)
+lm3.data <- merge(x = lm3.data, y = exam.scores %>% select(USER_ID, SC_FE_TOT),
+                  by.x = 'user_id', by.y = 'USER_ID', all.x = T, all.y = F)
+summary(lm3.data)
+
+## remove rows with NAs
+lm3.data <- lm3.data %>% filter(is.na(SC_FE_TOT)==FALSE & is.na(median_s_gap)==FALSE) 
+
+# ## since some of the predictors are on quite different scales, rescale them
+# apply(lm3.data %>% select(-user_id), 2, shapiro.test)
+# apply(lm3.data %>% select(-user_id), 2, function(x) length(boxplot.stats(x)$out))
+# # all preditors have outliers -> normalization is not advised
+# lm3.sc.data <- scale.features(lm3.data %>% select(-c(user_id, SC_FE_TOT)))
+# lm3.sc.data <- cbind(lm3.sc.data, SC_FE_TOT=lm3.data$SC_FE_TOT)
+# summary(lm3.sc.data)
+
+## the same results are obtained with scaled and unscaled (original) data;
+## will keep the results with original data as they are easier to interpret
+
+lm3.data <- lm3.data %>% select(-user_id)
+```
+
+```{r}
+lm3 <- lm(SC_FE_TOT ~ ., data = lm3.data)
+summary(lm3)
+```
+Significant predictors: 
+
+* session counts in week 5: negative impact (!), an additional session decreases exam score by 0.28
+* session counts in week 10: an additional session increases exam score by 0.52
+* session counts in week 11: an additional session increases exam score by 0.37
+* weekly entropy: if entropy increases by 1, exam score increases by 25; however, entropy cannot increase not nearly that much; this simply confirms that the higher the regularity (high entropy means that weekly counts are almost uniformly distributed), the higher the performance
+
+R-squared: 0.294 (adjusted R2: 0.275).
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm3$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm3)
+par(mfrow=c(1,1)) # Change back to 1 x 1
+# mostly fine, but there are few (potentially) influential points: 412, 459, 437, 77
+# let's examine them
+lm3.data[c(412,459,437,77),]
+summary(lm3.data)
+# 437 has very low engagement and very high exam score (35)
+# 459 has high engagement (at times very high) and zero (0) exam score
+# 412 is similar to 459, but not that extreme (7 exam score; less active)
+# 77 is almost completely inactive, and has zero (0) exam score
+
+## assumption 4: predictors and residuals are uncorrelated
+lm3.data <- lm3.data %>% filter(is.na(median_s_gap)==FALSE)
+for(c in 1:12)
+  print(cor.test(lm3.data[,c], lm3$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm3)
+# OK, values below or slightly above 2
+```
+
+
+### Model 4: Total number of study sessions, weekly entropy of study session counts, and time gap between consecutive sessions
+
+```{r}
+lm4.data <- merge(x = weekly.sessions %>% select(user_id, s_total, weekly_entropy),
+                  y = ses.gap.data %>% select(-mad_s_gap),
+                  by = 'user_id', all = TRUE)
+lm4.data <- merge(x = lm4.data, y = exam.scores %>% select(USER_ID, SC_FE_TOT),
+                  by.x = 'user_id', by.y = 'USER_ID', all.x = T, all.y = F)
+
+lm4.data <- lm4.data %>% filter( is.na(SC_FE_TOT)==FALSE ) %>% select(-user_id)
+```
+
+```{r}
+lm4 <- lm(SC_FE_TOT ~ ., data = lm4.data)
+summary(lm4)
+```
+
+Significant predictors: 
+
+* total number of sessions: an additional session increases exam score by 0.12
+* weekly entropy: if entropy increases by 1, exam score increases by 31.88; however, entropy cannot increase not nearly that much; this simply confirms that the higher the regularity (high entropy means that weekly counts are almost uniformly distributed), the higher the performance
+
+R-squared: 0.229 (adjusted R2: 0.224).
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm4$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm4)
+par(mfrow=c(1, 1))
+# the Residuals vs Fitted plot suggests that there might be some non-linear realtionship between the outcome and the predictors
+# there are also few influential points: 412, 459, 376, 77
+# let's examine them
+lm4.data[c(412,459,376, 77),]
+summary(lm4.data)
+# 77 is a clear outlier
+# 376 has relatively high engagement (above 3rd quartile), but very low exam score (4)
+# 412 and 459 have already been examined before
+
+## assumption 4: predictors and residuals are uncorrelated
+lm4.data <- lm4.data %>% filter(is.na(median_s_gap)==FALSE)
+for(c in 1:3)
+  print(cor.test(lm4.data[,c], lm4$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm4)
+# OK, values below 2
+```
+
+
+### Model 5: Number of study sessions per week day, and week day entropy of study session counts
+
+Loading the data
+```{r}
+weekday.sessions <- read.csv("Intermediate_results/regularity_of_study/weekday_session_props.csv")
+#str(weekday.sessions)
+
+lm5.data <- merge(x = weekday.sessions %>% select(1:8, 11),
+                  y = exam.scores %>% select(-SC_MT_TOT),
+                  by.x = "user_id", by.y = "USER_ID",
+                  all.x = TRUE, all.y = FALSE)
+# summary(lm5.data)
+lm5.data <- lm5.data %>% filter( is.na(SC_FE_TOT)==FALSE ) %>% select(-user_id)
+```
+
+```{r}
+lm5 <- lm(SC_FE_TOT ~ ., data = lm5.data)
+summary(lm5)
+```
+
+Significant predictors: 
+
+* Monday session counts: an additional Mon session increases exam score by 0.204
+* Tuesday session counts: an additional Tue session increases exam score by 0.117
+* Wednesday session counts: an additional Wed session increases exam score by 0.1
+* Thursday session counts: an additional Thu session increases exam score by 0.161
+* weekly entropy: if entropy increases by 1, exam score increases by 17.6; however, entropy cannot increase not nearly that much; this simply confirms that the higher the regularity (high entropy means that weekly counts are almost uniformly distributed), the higher the performance
+
+R-squared: 0.231 (adjusted R2: 0.218).
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm5$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm5)
+par(mfrow=c(1,1)) # Change back to 1 x 1
+# mostly fine, but there are few potentially influential points: usual suspects (412, 459), 230
+# let's examine them
+lm5.data[c(412,459,230),]
+summary(lm5.data)
+# 230 has low engagement and very high exam score (35)
+# 459 and 412 have already been considered
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:8)
+  print(cor.test(lm5.data[,c], lm5$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm5)
+# OK, values below 2
+```
+
+
+# Models based on 'advanced' indicators of engagement and regularity of study 
+
+### Model 6: Daily resource use
+
+As predictors, use total counts of different kinds of resources students used during their active days (an active day is a day when a student had at least one study session). The types of resources considered: 
+
+* video (VIDEO)
+* exercises (EXE)
+* multiple choice questions (MCQ)
+* reading materials (RES)
+* metacognitive items (METACOG)
+
+In addition, consider using:
+
+* median_X_cnt - median number of resources of type X used during the student's active days (X can be VIDEO, EXE, MCQ, RES, METACOG)
+* mad_X_cnt - MAD (median absolute deviation) of resources of the type X used during the student's active days
+* days_X_used - number of days when resources of the type X were used
+* prop_X_used - proportion of days when resources of the type X were used versus total number of the student's active days
+
+Loading the data...
+```{r}
+res.use.stats <- read.csv("Intermediate_results/regularity_of_study/daily_resource_use_statistics_w2-5_7-12.csv")
+#str(res.use.stats)
+
+lm6.data <- merge(res.use.stats, exam.scores, by.x = "user_id", by.y = "USER_ID", all.x = T, all.y = F)
+lm6.data <- lm6.data %>% select(-c(user_id, SC_MT_TOT)) %>% filter( is.na(SC_FE_TOT)==FALSE )
+```
+
+
+#### First, include only the indicators of engagement (not regularity)
+```{r results='hide'}
+lm6_1.data <- lm6.data %>% select( starts_with("tot"), starts_with("prop"), SC_FE_TOT)
+
+# examine the presence of (high) correlation between the variables
+ggcorr(lm6_1.data, method = c("complete","spearman"), 
+       #      geom = "circle", min_size = 0, max_size = 15,
+       label = TRUE, label_size = 3.5,
+       hjust = 0.85, size = 4, layout.exp = 1)
+
+# tot_mcog_cnt and prop_mcog_used are highly correlated, as are tot_video_cnt and prop_video_used, and tot_mcq_cnt and prop_mcq_used 
+lm6_1.data <- lm6_1.data %>% select(-c(prop_mcog_used, prop_video_used, prop_mcq_used))
+```
+
+```{r}
+# remove the outliers and re-run the model
+lm6_1.data <- lm6_1.data[-c(86, 412, 462, 459),]
+lm6_1 <- lm(SC_FE_TOT ~., data = lm6_1.data)
+summary(lm6_1)
+```
+Significant predictors: 
+
+* total exercise counts (number of exercise-related events during the student's active days): an additional exercise-related event *decreases* the final exam score by 0.0066
+* total MCQ counts (number of MCQ-related events during the student's active days): an additional MCQ-related event increases the final exam score by 0.0078
+* total number of reading related events: an additional reading-related event *decreases* the final exam score by 0.0096
+
+R-squared: 0.192 (adjusted R2: 0.180).
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm6_1$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm6_1)
+par(mfrow=c(1, 1))
+# unclear if homoscedasticity requirement is fulfilled; check using this plot:
+check.homoschedasticity(lm6_1)
+# not that good
+
+# # the plots point to couple of outliers: 86, 412, 462, 459 
+# # let's check them:
+# lm6_1.data[c(86, 412, 462, 459),]
+# summary(lm6_1.data)
+# # 459 and 462 have zero exam score, inspite of non-negligible number of learning events (especially 459)
+# # 412 was highly active, but had very low exam score (7)
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:7)
+  print(cor.test(lm6_1.data[,c], lm6_1$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm6_1)
+# it's fine: all below or equal to 2
+```
+The assumption of homoscedasticity cannot be considered satisfied (even after removing outliers)
+
+
+#### Now, include both indicators of engagement and indicator of regularity
+
+```{r results='hide'}
+# include those engagment indicators that proved at least slightly relevant in the previous model
+# plus mad_X_cnt as indicators of regularity
+lm6_2.data <- lm6.data %>% select(tot_mcq_cnt, tot_exe_cnt, tot_res_cnt, prop_res_used, 
+                                  starts_with("mad"), SC_FE_TOT)
+
+# examine the presence of (high) correlation between the variables
+plot.correlations(lm6_2.data)
+
+# exclude mad_res_cnt as highly correlated with tot_res_cnt (which proved significant)
+lm6_2.data <- lm6_2.data %>% select(-mad_res_cnt)
+```
+
+```{r}
+lm6_2 <- lm(SC_FE_TOT ~., data = lm6_2.data)
+summary(lm6_2)
+```
+None of the MAD variables is significant
+
+
+### Model 7: Daily topic focus
+
+As predictors, use total number of learning actions (during active days) with a particular topic focus; possible topic foci: 
+
+* 'ontopic' - the topic associated with the action is the topic of the current week
+* 'revisiting' - the topic associated with the action is the topic of one of the previous weeks
+* 'metacognitive' - the topic associated with the action is one of the following: 'ORG', 'DBOARD', 'STRAT', 'STUDYKIT'
+* 'orienteering' - the topic associated with the action is one of the following: 'HOME', 'HOF', 'SEARCH', 'TEA', 'EXAM', 'W01'-'W13'
+* 'project' - the action is related to project work
+
+In addition, consider including the following basic statistics:
+ 
+* median_X_cnt - median number of learning actions per active day with a particular topic focus 
+* mad_X_cnt - MAD of learning actions per active day with a particular topic focus
+* X_days - number of days with at least one action with particular topic focus 
+* X_prop - proportion of days with the given type of topic focus versus total number of active days
+
+Loading the required data...
+```{r}
+topic.stats <- read.csv("Intermediate_results/regularity_of_study/topic_counts_statistics_w2-5_7-12.csv")
+# str(topic.stats)
+
+lm7.data <- merge(topic.stats, exam.scores, by.x = "user_id", by.y = "USER_ID", all.x = T, all.y = F)
+lm7.data <- lm7.data %>% select(-c(user_id, SC_MT_TOT)) %>% filter( is.na(SC_FE_TOT)==FALSE )
+```
+
+#### First, include only the indicators of engagement (not regularity)
+```{r results='hide'}
+lm7_1.data <- lm7.data %>% select( starts_with("tot"), ends_with("prop"), SC_FE_TOT)
+
+summary(lm7_1.data)
+
+# examine the presence of (high) correlation between the variables
+plot.correlations(lm7_1.data)
+
+# exclude tot_orient_cnt and orinet_prop as they are highly correlated with some other variables
+lm7_1.data <- lm7_1.data %>% select(-c(tot_orient_cnt, orient_prop))
+```
+
+```{r}
+# exclude tot_prj_cnt, due to high VIF
+lm7_1.data <- lm7_1.data %>% select(-tot_prj_cnt)
+lm7_1 <- lm(SC_FE_TOT ~ ., data = lm7_1.data)
+summary(lm7_1)
+```
+Significant predictors: 
+
+* total number of prepartion (ontopic) events: an additional ontopic event increases the final exam score by 0.0048
+* total number of revisiting events: an additional revisting event *decreases* the final exam score by 0.0052
+* total number of metacognitive events: an additional metacognitive event increases the final exam score by 0.012
+* proportion of days with metacognitive events versus total number of active days: increase in this proportion *decreases* the exam score
+
+R-squared: 0.156 (adjusted R2: 0.145).
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm7_1$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm7_1)
+par(mfrow=c(1, 1))
+# normality is fine
+# unclear if homoscedasticity requirement is fulfilled; check using this plot:
+check.homoschedasticity(lm7_1)
+# it's fine
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:8)
+  print(cor.test(lm7_1.data[,c], lm7_1$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm7_1)
+# now, it's fine
+```
+
+#### Now, include both indicators of engagement and indicator of regularity
+
+```{r results='hide'}
+# include those engagment indicators that proved at least slightly relevant in the previous model
+# plus mad_X_cnt as indicators of regularity
+lm7_2.data <- lm7.data %>% select(tot_ontopic_cnt, tot_revisit_cnt, tot_metacog_cnt, metacog_prop, 
+                                  starts_with("mad"), SC_FE_TOT)
+
+# examine the presence of (high) correlation between the variables
+plot.correlations(lm7_2.data)
+
+# exclude tot_metacog_cnt as highly correlated with mad_metacog_cnt and mad_orient_cnt
+lm7_2.data <- lm7_2.data %>% select(-c(tot_metacog_cnt, mad_orient_cnt))
+```
+
+```{r}
+lm7_2 <- lm(SC_FE_TOT ~., data = lm7_2.data)
+summary(lm7_2)
+```
+The only regularity indicator that proved significant: mad_ontopic_cnt - one unit increase in MAD of ontopic counts leads to a *decrease* of 0.126 points in the final exam score 
+
+R2: 0.1493	(adjusted R2: 0.1366).
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm7_2$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm7_2)
+par(mfrow=c(1, 1))
+# normality is fine
+# unclear if homoscedasticity requirement is fulfilled; check using this plot:
+check.homoschedasticity(lm7_2)
+# not bad
+
+# a few influential points: 60, 54, 202
+# and a few outliers: 19, 294, 50
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:7)
+  print(cor.test(lm7_2.data[,c], lm7_2$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm7_2)
+# OK
+```
+A few outliers and (potentially) influential points; apart from that, it's fine
+
+
+
+### Model 8: Weekly resource use indicators 
+
+Indicators are computed at the week level, based on the following principle: a score of one is given to a student (for a given week), if he/she used certain kind of resource (e.g. video) more than the average (median) use of the that resource type in the given week
+
+Loading the data...
+```{r results='hide', message=FALSE}
+res.use.ind <- read.csv("Intermediate_results/regularity_of_study/res_use_indicators_w2-13.csv")
+#str(res.use.ind)
+
+lm8.data <- merge(x = res.use.ind, y = exam.scores %>% select(USER_ID, SC_FE_TOT),
+                  by.x = "user_id", by.y = "USER_ID", all.x = TRUE, all.y = FALSE)
+#summary(lm8.data)
+
+# remove students who do not have final exam score
+lm8.data <- lm8.data %>% filter( is.na(SC_FE_TOT)==FALSE )
+
+lm8.data <- lm8.data %>% select(-user_id)
+
+# examime correlations
+plot.correlations(lm8.data)
+
+# video_ind and MCQ_ind are highly correlated, remove one of them
+lm8.data <- lm8.data %>% select(-VIDEO_ind)
+```
+
+```{r}
+lm8 <- lm(SC_FE_TOT ~ ., data = lm8.data)
+summary(lm8)
+```
+Significant predictors:
+
+* MCQ_ind - a unit increase in this indicator (ie, one week more when a student's use of MCQs is higher than the average (median) use of MCQ in that week), increases the final exam score by 0.951 points 
+* EXE_ind - a unit increase of this indicator (ie, one week more when a student's use of exercises is higher than the average (median) use of exercises in that week), *decreases* the exam score by 0.825 points
+* RES_ind - a unit increase of this indicator (ie, one week more when a student's use of reading materias is higher than the average (median) use of reading content in that week), increases the exam score by 0.606 points.
+
+R-squared: 0.274 (adjusted R2: 0.268).
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm8$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm8)
+par(mfrow=c(1, 1))
+# both normality and homoscedasticity requirements are fulfilled
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:4)
+  print(cor.test(lm8.data[,c], lm8$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm8)
+# it's fine
+```
+
+
+### Model 9: Topic focus indicators
+
+Indicators are computed at the week level, based on the following principle:
+a score of one is given to a student (for a given week), if his/her number of events related to a particular topic type (e.g. revisiting) was above the average (median) number of events with that topic type in the given week
+
+Weeks 6 and 13 are excluded from these computations, as during these weeks one can expect  different behavioral patterns than usual.
+
+Loading the data
+```{r results='hide'}
+topic.ind <- read.csv("Intermediate_results/regularity_of_study/topic_based_indicators_w2-5_7-12.csv")
+#str(topic.ind)
+
+lm9.data <- merge(x = topic.ind, y = exam.scores %>% select(USER_ID, SC_FE_TOT),
+                  by.x = "user_id", by.y = "USER_ID", all.x = TRUE, all.y = FALSE)
+#summary(lm9.data)
+
+# remove students who do not have final exam score
+lm9.data <- lm9.data %>% filter( is.na(SC_FE_TOT)==FALSE )
+
+lm9.data <- lm9.data %>% select(-user_id)
+
+plot.correlations(lm9.data)
+
+# orient_ind and metacog_ind are highly correlated, remove one of them
+lm9.data <- lm9.data %>% select(-orient_ind)
+```
+
+```{r}
+lm9 <- lm(SC_FE_TOT ~ ., data = lm9.data)
+summary(lm9)
+```
+Significant predictors:
+
+* ontopic_ind - a unit increase in this indicator (ie, one week more when a student's number of 'ontopic' events is higher than the average (median) number of 'ontopic' events in that week), increases the final exam score by 0.9303 points 
+* metacog_ind - a unit increase in this indicator (ie, one week more when a student's number of 'metacognitive' events is higher than the average (median) number of 'metacognitive' events in that week), increases the final exam score by 0.4606 points
+
+R-squared: 0.1484	(adjusted R-squared: 0.1412)
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm9$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm9)
+par(mfrow=c(1, 1))
+# both normality and homoscedasticity requirements are fulfilled
+# there are few outliers (202, 213, 365), but no influential points
+
+# check the outliers
+lm9.data[c(202,213,365),]
+# very interesting:
+# - 202 was highly active but ended up with zero final exam score
+# - 213 and 365 were not preparing for lectures, and generaly had low engagement, but did the exam excellently
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:4)
+  print(cor.test(lm9.data[,c], lm9$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm9)
+# it's fine
+```
+
+
+### Model 10: Combine resource use and topic focus indicators
+
+Use those indicators that proved significant in the previous two models (models 8 and 9)
+
+Loading the data
+```{r results='hide'}
+topic.ind <- read.csv("Intermediate_results/regularity_of_study/topic_based_indicators_w2-5_7-12.csv")
+res.use.ind <- read.csv("Intermediate_results/regularity_of_study/res_use_indicators_w2-13.csv")
+
+lm10.data <- merge(x = topic.ind %>% select(user_id, ontopic_ind, metacog_ind), 
+                   y = res.use.ind %>% select(user_id, MCQ_ind, RES_ind, EXE_ind),
+                  by = "user_id", all = TRUE)
+
+lm10.data <- merge(x = lm10.data, y = exam.scores %>% select(USER_ID, SC_FE_TOT),
+                  by.x = "user_id", by.y = "USER_ID", all.x = TRUE, all.y = FALSE)
+summary(lm10.data)
+
+# remove students who do not have final exam score
+lm10.data <- lm10.data %>% filter( is.na(SC_FE_TOT)==FALSE )
+
+plot.correlations(lm10.data %>% select(-user_id))
+
+# RES_ind and metacog_ind are highly correlated, remove metacog_ind as it was less significant in the previous models
+lm10.data <- lm10.data %>% select(-metacog_ind)
+```
+
+```{r}
+lm10 <- lm(SC_FE_TOT ~ ., data = lm10.data %>% select(-user_id))
+summary(lm10)
+```
+All 4 predictors are significant; however, only slight improvement in R2 w.r.t. model 8:
+R-squared: 0.2812	(adjusted R-squared: 0.2751)
+
+
+### Model 11: Extend model 10 with total number of study sessions and entropy of weekly study session counts
+
+Loading the data
+```{r}
+weekly.sessions <- read.csv("Intermediate_results/regularity_of_study/weekly_session_props.csv")
+
+lm11.data <- merge(x = lm10.data, y = weekly.sessions %>% select(user_id, s_total, weekly_entropy),
+                   by = 'user_id', all.x = TRUE, all.y = FALSE)
+#summary(lm11.data)
+lm11.data <- lm11.data[,c(1:5,7,8,6)]
+
+plot.correlations(lm11.data %>% select(-user_id))
+
+# total number of sessions is highly correlated with almost all other variables
+lm11.data <- lm11.data %>% select(-s_total)
+```
+
+```{r}
+lm11 <- lm(SC_FE_TOT ~ ., data = lm11.data %>% select(-c(user_id, ontopic_ind)))
+summary(lm11)
+```
+All 4 predictors that were eventually used for model building - MCQ_ind, EXE_ind, RES_ind, and weekly_entropy - proved highly significant.
+
+R-squared: 0.3255	(adjusted R-squared: 0.3198)
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm11$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm11)
+par(mfrow=c(1, 1))
+# normality is fulfilled, but the homoscedasticity requirements is questionable
+check.homoschedasticity(lm11)
+# not good, there outliers and/or influential points
+
+# check the outliers
+lm11.data[c(49,294,50),]
+# - 294 and 50: low to moderate activity indicators and zero final exam score
+# - 230: moderate activity indicators, but excellent exam score
+
+# check influential points
+inf.indices <- as.numeric(names(head(sort(cooks.distance(lm11), decreasing = T))))
+lm11.data[inf.indices,]
+# observations with ordinal numbers  163, 241, 336 should be considered for removal
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:5)
+  print(cor.test(lm11.data[,c], lm11$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm11)
+## ontopic_ind and MCQ_ind have values > 2; remove ontopic_ind as it is not significant
+# now (after ontopic_ind was removed), it's fine
+```
+If the model is to be used, the outliers should be dealt with.
+
+
+### Model 12: Extend model 10 with number of study sessions per weekday, and weekday entropy of study session counts
+
+In addition to predictors from Model 10 and weekday entropy of study session counts, use, as predictors, study session counts for those week days that proved as significant predictors in Model 5 (Mon, Tue, Wed, Thu).
+
+Loading the data...
+```{r}
+weekday.sessions <- read.csv("Intermediate_results/regularity_of_study/weekday_session_props.csv")
+
+lm12.data <- merge(x = lm10.data,
+                   y = weekday.sessions %>% select(user_id, Mon_count, Tue_count, Wed_count,
+                                                   Thu_count, weekday_entropy), 
+                   by = "user_id", all.x = TRUE, all.y = FALSE)
+
+# summary(lm12.data)
+lm12.data <- lm12.data[,c(1:5,7:11,6)]
+
+plot.correlations(lm12.data %>% select(-user_id))
+```
+
+```{r}
+lm12 <- lm(SC_FE_TOT ~ ., data = lm12.data %>% select(-c(user_id, ontopic_ind, RES_ind)))
+summary(lm12)
+```
+
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm12$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm12)
+par(mfrow=c(1, 1))
+# both normality and homoscedasticity requirements are fulfilled
+
+# there are few outliers (230, 50, 459), but they do not look that significant
+
+# check influential points
+inf.indices <- as.numeric(names(head(sort(cooks.distance(lm12), decreasing = T))))
+lm12.data[inf.indices,]
+# observations with ordinal numbers  459, 22, 292 should be considered for removal
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:10)
+  print(cor.test(lm12.data[,c], lm12$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm12)
+## ontopic_ind has value > 2; remove it
+## now RES_ind stands out with high value; remove it
+# now (after ontopic_ind and RES_ind were removed), it's fine
+```
+
+
+
+### Model 13: Extends model 12 with entropy of weekly study session counts
+
+Loading the data...
+```{r}
+weekly.sessions <- read.csv("Intermediate_results/regularity_of_study/weekly_session_props.csv")
+
+lm13.data <- merge(x = lm12.data %>% select(-c(ontopic_ind, RES_ind)), 
+                   y = weekly.sessions %>% select(user_id, weekly_entropy),
+                   by = 'user_id', all.x = TRUE, all.y = FALSE)
+#summary(lm13.data)
+lm13.data <- lm13.data[,c(1:8,10,9)]
+
+plot.correlations(lm13.data %>% select(-user_id))
+```
+
+```{r}
+lm13 <- lm(SC_FE_TOT ~ ., data = lm13.data %>% select(-user_id))
+summary(lm13)
+```
+
+R-squared: 0.349 (adjusted R-squared: 0.338)
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm13$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm13)
+par(mfrow=c(1, 1))
+check.homoschedasticity(lm13)
+# normality is fulfilled
+# homoscedasticity is somewhat questionable - there are outliers and/or influential points
+
+# outliers: 230, 50, 459
+
+# check influential points
+inf.indices <- head(sort(cooks.distance(lm13), decreasing = T))
+inf.indices
+lm13.data[as.numeric(names(inf.indices)),]
+# observations with ordinal numbers  459, 163, 336, and 241 should be considered for removal (all have final exam score = zero)
+
+## assumption 4: predictors and residuals are uncorrelated
+for(c in 1:10)
+  print(cor.test(lm13.data[,c], lm13$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm13)
+# it's fine
+```
+
+
+Assessing R2 shrinkage using 10-Fold Cross-Validation
+(following guidance from http://www.statmethods.net/stats/regression.html)
+```{r}
+# define functions 
+theta.fit <- function(x,y){lsfit(x,y)}
+theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+
+# matrix of predictors
+X <- as.matrix(lm13.data %>% select(-c(user_id, SC_FE_TOT)))
+# vector of predicted values
+y <- as.matrix(lm13.data %>% select(SC_FE_TOT)) 
+
+results <- crossval(X, y, theta.fit, theta.predict, ngroup=10)
+cor(y, lm13$fitted.values)**2 # raw R2 
+cor(y, results$cv.fit)**2 # cross-validated R2
+```
+Raw R-squared: 0.349
+Cross-validated R-squared: 0.3243
+
+
+Compute cross-validated standard error of prediction
+(following guidance from: http://www.statmethods.net/stats/regression.html)
+```{r}
+cv.out <- cv.lm(data=lm13.data, form.lm = lm13, m = 10) # 10 fold cross-validation
+
+# take the square root of the MSE to get the cross-validated standard error of estimate
+sqrt(attr(x = cv.out, which = "ms"))
+sqrt(attr(x = cv.out, which = "ms"))/40 
+```
+Cross-validated standard error of the prediction (of final exam score) is `r sqrt(attr(x = cv.out, which = "ms"))` (max score is 40). 
+
+
+### Model 14: Random Forest regression model with same predictors as linear model 13
+
+```{r include=FALSE}
+summary(lm13.data)
+```
+
+Features need to be scaled
+```{r}
+# check for outliers
+apply(lm13.data[,-1], 2, function(x) length(boxplot.stats(x)$out))
+# some features have a lot of outliers: weekly_entropy:33, weekday_entropy:16
+
+## due to outliers, use standardization with median and Interquartile Range (IQR)
+scaled.mod13.dat <- data.frame(apply(lm13.data[,-c(1,10)], 2, 
+                                     function(x) {(x-median(x, na.rm = T))/IQR(x, na.rm = T)} ))
+summary(scaled.mod13.dat)
+
+scaled.mod13.dat <- cbind(scaled.mod13.dat, FE_SCORE=lm13.data$SC_FE_TOT)
+```
+
+Build a RF model
+```{r}
+## use caret to build a RF model
+library(caret)
+
+tr.control <- trainControl(method ="repeatedcv", 
+                           number = 10, 
+                           repeats = 5, 
+                           search = "grid")
+## default for mtry is 1/3 of the number of predictors (14 in this case)
+tune.grid <- expand.grid(.mtry=c(2:5))
+
+set.seed(372017)
+rf <- train(FE_SCORE ~ ., 
+            data=scaled.mod13.dat, 
+            method="rf", 
+            ntree=3500,
+            importance = TRUE,
+            tuneGrid=tune.grid, 
+            trControl=tr.control)
+print(rf)
+```
+The best model:
+mtry=2, RMSE = 7.993946, Rsquared=0.3424
+
+
+```{r include=FALSE}
+plot(rf)
+```
+
+Examine the importance of features
+```{r}
+varImp(rf, scale = TRUE)
+```
+
+
+### Model 15: Extends model 13 with indicators of weekly regularity of assessment outcome 
+
+```{r}
+weekly.assess.ind <- read.csv("Intermediate_results/regularity_of_study/weekly_assessement_action_prop_w2-5_7-12.csv")
+
+weekly.assess.ind <- weekly.assess.ind %>% select(user_id, starts_with("SD"))
+
+weekly.assess.entropy <- read.csv("Intermediate_results/regularity_of_study/weekly_assessement_action_entropy_w2-5_7-12.csv")
+
+lm15.data <- merge(x = lm13.data, y = weekly.assess.entropy, 
+                   by = "user_id", all.x = TRUE, all.y = FALSE)
+
+lm15.data <- merge(x = lm15.data, y = weekly.assess.ind, 
+                   by = "user_id", all.x = TRUE, all.y = FALSE)
+
+lm15.data <- lm15.data[,c(1:9, 11:20, 10)]
+plot.correlations(lm15.data %>% select(-user_id))
+
+## remove variables that are highly correlated
+lm15.data <- lm15.data %>% select(-c(FA_IN_entropy, SA_IN_entropy, SD_SA_IN))
+
+incomplete <- which(complete.cases(lm15.data)==FALSE)
+lm15.data <- lm15.data[-incomplete,]
+```
+
+```{r}
+lm15 <- lm(SC_FE_TOT ~ ., data = lm15.data %>% select(-user_id))
+summary(lm15)
+```
+
+Significant predictors: MCQ_ind, EXE_ind, Mon_count, Tue_count, Thu_count, weekday_entropy, weekly_entropy, SA_CO_entropy, SD_FA_CO, SD_FA_SR, SD_FA_IN, SD_SA_CO
+Not significant: Wed_count, FA_CO_entropy, FA_SR_entropy 
+
+R-squared: 0.393	(adjusted R-squared: 0.373).
+
+```{r}
+lm15.cv.R2 <- compute.CV.R2(lm15.data[,-c(1,17)], lm15.data$SC_FE_TOT, lm15)
+lm15.cv.R2[2]
+```
+Cross-validated R-squared: `r lm15.cv.R2[2]`
+
+For the sake of comparison, values for R-squared and adj. R-squared for model 13 are 0.349 and 0.338, respectively.
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm15.cv_err <- compute.CV.stand.error(lm15.data[,-1], lm15)
+```
+7.92 
+Max final exam score: 40; so, the error is `r (lm15.cv_err*100)/40` percent.
+
+
+
+### Model 16: Random Forest regression model with same predictors as linear model 15
+
+```{r include=FALSE}
+summary(lm15.data)
+```
+
+Features need to be scaled
+```{r}
+# check for outliers
+apply(lm15.data[,-c(1,17)], 2, function(x) length(boxplot.stats(x)$out))
+# some features have a lot of outliers: weekly_entropy:33, weekday_entropy:16, SA_CO_entropy: 29
+
+## due to outliers, use standardization with median and Interquartile Range (IQR)
+scaled.mod15.dat <- data.frame(apply(lm15.data[,-c(1,17)], 2, 
+                                     function(x) {(x-median(x, na.rm = T))/IQR(x, na.rm = T)} ))
+#summary(scaled.mod15.dat)
+
+scaled.mod15.dat <- cbind(scaled.mod15.dat, FE_SCORE=lm15.data$SC_FE_TOT)
+```
+
+Build a RF model
+```{r}
+## use caret to build a RF model
+library(caret)
+
+tr.control <- trainControl(method ="repeatedcv", 
+                           number = 10, 
+                           repeats = 5, 
+                           search = "grid")
+## default for mtry is 1/3 of the number of predictors (14 in this case)
+tune.grid <- expand.grid(.mtry=c(2:5))
+
+set.seed(372017)
+rf <- train(FE_SCORE ~ ., 
+            data=scaled.mod15.dat, 
+            method="rf", 
+            ntree=3500,
+            importance = TRUE,
+            tuneGrid=tune.grid, 
+            trControl=tr.control)
+print(rf)
+```
+The best model:
+mtry=5, RMSE=7.65, Rsquared=0.397
+
+
+```{r include=FALSE}
+plot(rf)
+```
+
+Examine the importance of features
+```{r}
+varImp(rf, scale = TRUE)
+```

@@ -173,7 +173,8 @@ write_csv(session.regularity, "Intermediate_results/regularity_of_study/inter-se
 session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
 table(session.data$week)
 
-weekly.props <- compute.weekly.counts(session.data %>% filter(week %in% c(2:5,7:12)))
+weekly.props <- compute.weekly.counts(sessions = session.data %>% filter(week %in% c(2:5,7:12)),
+                                      weeks = c(2:5,7:12))
 # proportion of students with normal dist for weekly proportions: 0.78 -> use SD?
 str(weekly.props)
 
@@ -887,24 +888,13 @@ for(w in 2:13) {
 }
 colnames(rt.indicators) <- c.names
 
+## save these indicators
+write.csv(rt.indicators, "Intermediate_results/regularity_of_study/res_use_above_median_indicators_w2-13.csv",
+          quote = FALSE, row.names = FALSE)
+
 ## for each type of resource, compute the number of weeks when it was used 
 ## above the median level of use 
-m <- matrix(nrow = nrow(rt.indicators), ncol = (1 + length(res_types)))
-c <- 1
-for(s in rt.indicators$user_id) {
-  stud.data <- rt.indicators %>% filter(user_id==s)
-  res.counts <- s
-  for(rt in res_types) {
-    pattern <- paste0("W\\d{1,2}_", rt, "_bin")
-    rt.c.names <- c.names[grep(pattern, c.names)]
-    w.cnt <- stud.data %>% select(one_of(rt.c.names)) %>% as.vector() 
-    res.counts <- c(res.counts, sum(w.cnt))
-  }
-  m[c,] <- res.counts
-  c <- c + 1
-}
-rt.sum.indicators <- data.frame(m)
-colnames(rt.sum.indicators) <- c('user_id', paste0(res_types, "_ind")) 
+rt.sum.indicators <- compute.engagement.indicator(rt.indicators, c(2:13), res_types)
 head(rt.sum.indicators)
 
 ## save these indicators
@@ -975,30 +965,75 @@ for(w in c(2:5,7:12)) {
 }
 colnames(topic.indicators) <- c.names
 
+## save these indicators
+write.csv(topic.indicators, 
+          "Intermediate_results/regularity_of_study/topics_above_median_indicators_w2-5_7-12.csv",
+          quote = FALSE, row.names = FALSE)
 
 ## for each topic type, compute the number of weeks when it was present 
 ## above the median level 
-m <- matrix(nrow = nrow(topic.indicators), ncol = (1 + length(topic_types)))
-c <- 1
-for(s in topic.indicators$user_id) {
-  stud.data <- topic.indicators %>% filter(user_id==s)
-  t.counts <- s
-  for(tt in topic_types) {
-    pattern <- paste0("W\\d{1,2}_", tt, "_bin")
-    tt.c.names <- c.names[grep(pattern, c.names)]
-    w.cnt <- stud.data %>% select(one_of(tt.c.names)) %>% as.vector() 
-    t.counts <- c(t.counts, sum(w.cnt))
-  }
-  m[c,] <- t.counts
-  c <- c + 1
-}
-topic.sum.indicators <- data.frame(m)
-colnames(topic.sum.indicators) <- c('user_id', paste0(topic_types, "_ind")) 
+topic.sum.indicators <- compute.engagement.indicator(topic.indicators, c(2:5,7:12), topic_types)
 head(topic.sum.indicators)
 
 ## save these indicators
 write.csv(topic.sum.indicators, 
           "Intermediate_results/regularity_of_study/topic_based_indicators_w2-5_7-12.csv",
+          quote = FALSE, row.names = FALSE)
+
+
+#############################################################################
+# For each course week compute counts and proportions of:
+# - correctly solved MCQs
+# - incorrectly solved MCQs
+# - solution was requested for MCQ
+# - correctly solved exercises
+# - incorrectly solved exercises
+#
+# Then, compute 
+# - SD (or MAD) of proportions as indicators of regularity 
+# - entropy of each type of assessment action; this will be 
+#   entropy of weekly counts 
+#############################################################################
+
+traces <- readRDS(file = "Intermediate_results/study_mode_weeks2-13.RData")
+str(traces)
+
+traces$ACTION <- as.character(traces$ACTION)
+## rename EQT_CO, VEQ_CO, and EXE_F_CO to FA_CO (FA = Formative Assessment), also
+## rename EQT_IN, VEQ_IN, and EXE_F_IN to FA_IN, 
+## rename EQT_SR and VEQ_SR to FA_SR 
+traces$ACTION[traces$ACTION %in% c("EQT_CO", "VEQ_CO", "EXE_F_CO")] <- "FA_CO"
+traces$ACTION[traces$ACTION %in% c("EQT_IN", "VEQ_IN", "EXE_F_IN")] <- "FA_IN"
+traces$ACTION[traces$ACTION %in% c("EQT_SR", "VEQ_SR")] <- "FA_SR"
+## rename EXE_S_CO to SA_CO (SA = Summative Assessment), and EXE_S_IN to SA_IN
+traces$ACTION[traces$ACTION=="EXE_S_CO"] <- "SA_CO"
+traces$ACTION[traces$ACTION=="EXE_S_IN"] <- "SA_IN"
+## remove columns and rows that are not needed
+traces <- traces %>% 
+  select(-c(STUDY_MODE, TIME_GAP, TOPIC)) 
+traces <- subset(traces, ACTION %in% c("FA_CO", "FA_IN", "FA_SR", "SA_CO", "SA_IN"))
+table(traces$ACTION)  
+## sort the data based on the 1) student, 2) WEEK, 3) timestamp
+sorted.traces <- traces[ with(traces, order(USER_ID, WEEK, TIMESTAMP)), ]
+# remove timestamp - for some reason, its causing problems and is not needed any more
+sorted.traces <- sorted.traces %>% select(-TIMESTAMP)
+colnames(sorted.traces) <- c("user_id", "session_id", "action", "week")
+
+## compute proportions of different types of assessment actions and based on that 
+## regularity indicators (SD, MAD)
+weekly.assess.prop <- weekly.prop.of.assessment.actions(sorted.traces, c(2:5,7:12))
+
+## save these indicators
+write.csv(weekly.assess.prop, 
+          "Intermediate_results/regularity_of_study/weekly_assessement_action_prop_w2-5_7-12.csv",
+          quote = FALSE, row.names = FALSE)
+
+## compute entropy of different types of assessment action counts
+assess.weekly.entropy <- weekly.entropy.of.assessment.actions(sorted.traces, c(2:5,7:12))
+
+## save these indicators
+write.csv(assess.weekly.entropy, 
+          "Intermediate_results/regularity_of_study/weekly_assessement_action_entropy_w2-5_7-12.csv",
           quote = FALSE, row.names = FALSE)
 
 #############################################################################

@@ -1,0 +1,682 @@
+---
+title: "Using mix-effect models to examine regularity of study and its effect on student exam performance"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+
+# load the required libraries and functions
+library(tidyverse)
+library(knitr)
+
+library(lme4)
+library(lmerTest)
+library(MuMIn)
+
+source("https://raw.githubusercontent.com/briatte/ggcorr/master/ggcorr.R")
+
+seed <- 2572017
+```
+
+```{r include=FALSE}
+
+plot.correlations <- function(dataset) {
+  ggcorr(dataset, method = c("complete","spearman"), 
+       #      geom = "circle", min_size = 0, max_size = 15,
+       label = TRUE, label_size = 3.5,
+       hjust = 0.85, size = 4, layout.exp = 1)
+}
+
+
+## the f. scales the given feature set by standardizing them
+## as features are expected to have outliers, instead of using mean and SD, 
+## median and Interquartile Range (IQR) are used, as suggested here:
+## http://scikit-learn.org/stable/modules/preprocessing.html#scaling-data-with-outliers
+scale.features <- function(features) {
+  m <- matrix(nrow = nrow(features), ncol = ncol(features), byrow = FALSE)
+  i <- 1
+  for(f in features) {
+    if ( IQR(x = f, na.rm = T) != 0 )
+      m[,i] <- (f - median(f, na.rm = T))/IQR(f, na.rm = T)
+    else
+      m[,i] <- 0
+    i <- i + 1  
+  }
+  scaled.data <- data.frame(m)
+  colnames(scaled.data) <- colnames(features)
+  # scaled.data <- data.frame(apply(features, 2, 
+  #                                 function(x) {(x-median(x, na.rm = T))/IQR(x, na.rm = T)} ))
+  scaled.data
+}
+
+
+## f. draws 2 plots: 1) for checking if residuals are normally distributed 
+## 2) for checking the homoskedasticity assumption
+check.residuals <- function(lme.mod) {
+  par(mfrow = c(2,1))
+  
+  ## first, check for the normality of residuals assumption
+  qqnorm(resid(lme.mod)) 
+  qqline(resid(lme.mod))
+  
+  ## now, draw a plot to check if the residuals have 
+  ## approximately equal deviation from the predicted values
+  plot(fitted(lme.mod),
+       resid(lme.mod,type="pearson"),
+       col="blue") 
+  abline(h=0,lwd=2)
+  lines(smooth.spline(fitted(lme.mod), residuals(lme.mod)), lwd=2, col='red')
+  
+  par(mfrow = c(1,1))
+}
+
+## another way of using residual plot to examine the fittnes of the built model
+## from: http://goo.gl/0avoit
+check.residuals2 <- function(lme.mod) {
+  plot(fitted(lme.mod), 
+       residuals(lme.mod), 
+       xlab = "Fitted Values", ylab = "Residuals", col='blue')
+  abline(h = 0, lty = 2)
+  lines(smooth.spline(fitted(lme.mod), 
+                      residuals(lme.mod)), lwd=2)
+}
+
+## f. for computing VIF (Variance Inflation Factor), used for checking
+## multicolinearity
+## taken from: https://github.com/aufrank/R-hacks/blob/master/mer-utils.R
+vif.mer <- function (fit) {
+  ## adapted from rms::vif
+  
+  v <- vcov(fit)
+  nam <- names(fixef(fit))
+  
+  ## exclude intercepts
+  ns <- sum(1 * (nam == "Intercept" | nam == "(Intercept)"))
+  if (ns > 0) {
+    v <- v[-(1:ns), -(1:ns), drop = FALSE]
+    nam <- nam[-(1:ns)]
+  }
+  
+  d <- diag(v)^0.5
+  v <- diag(solve(v/(d %o% d)))
+  names(v) <- nam
+  v
+}
+```
+
+
+Loading the required data...
+```{r}
+cluster.assignments <- read.csv("Intermediate_results/regularity_of_study/regularity_based_clusters.csv")
+
+exam.scores <- read.csv(file = "Intermediate_results/exam_scores_with_student_ids.csv")
+# remove email data
+exam.scores <- exam.scores %>% select(-2)
+
+# merge exam scores and clusters
+clust.and.scores <- merge(x = cluster.assignments %>% select(-cl3), 
+                          y = exam.scores %>% select(-SC_MT_TOT),
+                          by.x = "user_id", by.y = "USER_ID",
+                          all.x = TRUE, all.y = FALSE)
+```
+
+
+### Model 0: cluster assignment as the random effect, no fixed effects
+
+Creating a baseline model with identified clusters as the random effect (no fixed effects)
+
+Preparing the data for the model
+```{r}
+lme_0_dat <- clust.and.scores %>% select(-user_id)
+```
+
+```{r}
+set.seed(seed)
+lme_0 <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_0_dat, REML = FALSE)
+summary(lme_0)
+```
+
+```{r}
+## compute ICC
+r.squaredGLMM(lme_0)
+```
+22.51% of the total variance is explained by the cluster assignment
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(resid(lme_0))
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+check.residuals(lme_0)
+check.residuals2(lme_0)
+# OK
+```
+
+
+### Model 1: Proportions and regularity of preparation (ontopic) sessions and last minute preparation sessions
+
+Use as fixed effects:
+
+* proportions of 'preparation' sessions, that is, sessions with the main_topic being the topic of the week's lecture
+* proportions of 'last minute preparation sessions', that is, 'preparation' sessions done in 24h before a week's lecture;
+*  SD of these proportions computed at the weekly level
+
+```{r results='hide'}
+prep.sessions <- read.csv("Intermediate_results/regularity_of_study/on_topic_and_last_min_proportions.csv")
+# str(prep.sessions)
+
+lme_1_dat <- merge(x = prep.sessions %>% select(-ends_with("mad")), 
+                   y = clust.and.scores, 
+                   by = "user_id", all.x = F, all.y = T)
+
+summary(lme_1_dat)
+
+plot.correlations(lme_1_dat)
+
+lme_1_dat <- lme_1_dat %>% select(-user_id)
+```
+
+```{r}
+set.seed(seed)
+lme_1 <- lmer(SC_FE_TOT ~ on_topic_prop + on_topic_prop_sd + last_min_prop + last_min_prop_sd +
+                (1|cl4), data = lme_1_dat, REML = FALSE)
+summary(lme_1)
+```
+Only *on_topic_prop_sd* is significant; a unit increase, leads to a *decrease* of the final exam score  
+
+
+Compare the model with the baseline
+```{r}
+# lme_1_base <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_1_dat, REML = FALSE)
+# anova(lme_1, lme_1_base)
+```
+Cannot be compared as they do not have the same number of observations: some observations were removed from the lme_1 model due to NA values
+
+```{r}
+## compute ICC
+r.squaredGLMM(lme_1)
+```
+The overall model explains 18.64% of variability in the final exam score; only a small portion - 3.85% - of this variability is explained by the fixed factors
+
+
+Checking if model assumptions hold
+```{r results='hide'}
+# if residuals are normally distributed with constant standard deviation
+check.residuals(lme_1)
+
+# check for multicolinearity
+max(vif.mer(lme_1))
+```
+Assumptions do hold
+
+
+
+### Model 2: Number of study sessions per week day, and week day entropy of study session counts as fixed effects
+
+Loading the data
+```{r results='hide'}
+weekday.sessions <- read.csv("Intermediate_results/regularity_of_study/weekday_session_props.csv")
+# str(weekday.sessions)
+
+lme_2_dat <- merge(x = weekday.sessions %>% select(1:8, 11),
+                  y = clust.and.scores,
+                  by = "user_id", all.x = FALSE, all.y = TRUE)
+
+lme_2_dat <- lme_2_dat %>% select(-user_id)
+
+#summary(lme_2_dat)
+
+# since the count variables are on a very different scale than the entropy, standardize them
+lme_2_st_dat <- scale.features(lme_2_dat)
+#summary(lme_2_st_dat)
+```
+
+```{r}
+set.seed(seed)
+lme_2 <- lmer(SC_FE_TOT ~ Sun_count + Mon_count + Tue_count + Wed_count + Thu_count + Fri_count +
+                Sat_count + weekday_entropy + (1|cl4), data = lme_2_st_dat, REML = FALSE)
+summary(lme_2)
+```
+As in regular linear model (Model 5), Mon, Tue, Wed, and Thu session counts are significant, as is the weekday entropy.
+
+Compare the model with the baseline
+```{r}
+lme_2_base <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_2_st_dat, REML = FALSE)
+anova(lme_2, lme_2_base)
+```
+Model 2 is significantly better than the baseline.
+
+
+```{r}
+## compute ICC
+r.squaredGLMM(lme_2)
+```
+Since marginal R2 and conditional R2 are exactly the same, it means that all the variability is explained by the fixed factors; the random factor does not contribute (also visible in the model summary).
+
+
+Checking if residuals are normally distributed with constant standard deviation
+```{r results='hide'}
+check.residuals(lme_2)
+check.residuals2(lme_2)
+```
+Not fully fine, but also not too bad
+
+Check for multicolinearity
+```{r}
+max(vif.mer(lme_2))
+```
+It's OK
+
+
+### Model 3: Daily resource use (as fixed effects)
+
+Loading the data...
+```{r}
+res.use.stats <- read.csv("Intermediate_results/regularity_of_study/daily_resource_use_statistics_w2-5_7-12.csv")
+
+lme_3_dat <- merge(res.use.stats, clust.and.scores, by = "user_id", all.x = F, all.y = T)
+
+lme_3_dat <- lme_3_dat %>% select(-user_id)
+```
+
+
+```{r include=FALSE}
+# Examine potential predictors (fixed effects)
+summary(lme_3_dat)
+
+plot.correlations(lme_3_dat)
+```
+
+
+#### Use total daily resource counts as fixed effects
+```{r}
+lme_3.1_dat <- lme_3_dat %>% select(starts_with("tot"), cl4, SC_FE_TOT)
+
+plot.correlations(lme_3.1_dat)
+```
+
+```{r}
+set.seed(seed)
+lme_3.1 <- lmer(SC_FE_TOT ~ tot_video_cnt + tot_exe_cnt + tot_mcq_cnt + tot_mcog_cnt + 
+                  tot_res_cnt + (1|cl4), data = lme_3.1_dat, REML = FALSE)
+summary(lme_3.1)
+
+```
+Predictors with siginifican effect:
+
+* total number of exercise-related events - each new event of this type decreases the exam score by 0.0073 points 
+* total number of reading-related events - each new event of this type increases the exam score by 0.0051 points 
+
+
+Compare the model with the baseline
+```{r}
+lme_3.1_base <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_3.1_dat, REML = FALSE)
+anova(lme_3.1, lme_3.1_base)
+```
+The new model (lme_3.1) is significantly better than the baseline.
+
+
+```{r}
+r.squaredGLMM(lme_3.1)
+```
+The overall model explains 27.88% of variability in the final exam score; fixed effects explain only 8.23%
+
+
+Checking if model assumptions are satisfied
+```{r results='hide'}
+# if residuals are normally distributed and if equality of variance holds
+check.residuals(lme_3.1)
+check.residuals2(lme_3.1)
+
+# check for multicolinearity
+max(vif.mer(lme_3.1))
+```
+It is questionable if the equality of variance assumption holds; other things are fine.
+
+
+#### Add regularity indicators - MAD of daily resource counts (to fixed effects)
+```{r}
+lme_3.2_dat <- lme_3_dat %>% select(starts_with("tot"), starts_with("mad"), cl4, SC_FE_TOT)
+
+plot.correlations(lme_3.2_dat)
+
+# remove mad_rec_cnt as highly correlated with tot_res_cnt
+lme_3.2_dat <- lme_3.2_dat %>% select(-mad_res_cnt)
+
+# summary(lme_3.2_dat)
+# some variables have very different scales - need to be rescaled 
+
+lme_3.2_st_dat <- scale.features(lme_3.2_dat %>% select(-c(cl4, SC_FE_TOT)))
+# summary(lme_3.2_st_dat)
+# when rescalled, almost all regularity indicators (MAD) values become zero
+```
+Not applicable, as when rescalled, MAD values become zero; this is due to their highly unregular distribution with numerous outliers
+
+
+### Model 4: Daily topic focus (as fixed effects)
+
+Loading the data...
+```{r}
+topic.stats <- read.csv("Intermediate_results/regularity_of_study/topic_counts_statistics_w2-5_7-12.csv")
+
+lme_4_dat <- merge(topic.stats, clust.and.scores, by = "user_id", all.x = F, all.y = T)
+
+lme_4_dat <- lme_4_dat %>% select(-user_id)
+```
+
+
+```{r include=FALSE}
+# Examine potential predictors (fixed effects)
+
+summary(lme_4_dat)
+
+plot.correlations(lme_4_dat)
+```
+
+
+#### Use the proportion of days with each topic focus as the fixed effects
+
+Note: initially, I wanted to use days (with each topic focus), but X_days variables are highly mutually correlated
+
+```{r}
+lme_4.1_dat <- lme_4_dat %>% select(ends_with("prop"), cl4, SC_FE_TOT)
+
+plot.correlations(lme_4.1_dat)
+
+# remove orient_prop as highly correlated with metacog_prop; also prj_prop as having zero correlation with the exam score
+lme_4.1_dat <- lme_4.1_dat %>% select(-c(prj_prop, orient_prop))
+```
+
+```{r}
+set.seed(seed)
+lme_4.1 <- lmer(SC_FE_TOT ~ ontopic_prop + revisit_prop + metacog_prop + (1|cl4), 
+                data = lme_4.1_dat, REML = FALSE)
+summary(lme_4.1)
+
+```
+The only significant fixed effect is *ontopic_prop* - the proportion of active days when a student was preparing for the week's lecture
+
+
+```{r}
+r.squaredGLMM(lme_4.1)
+```
+The overall model explains 22.7% of variance in the final exam score; fixed effects contribute only 2% of explained variance
+
+
+Compare the model with the baseline
+```{r}
+lme_4.1_base <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_4.1_dat, REML = FALSE)
+anova(lme_4.1, lme_4.1_base)
+```
+The new model (lme_4.1) is significantly better than the baseline.
+
+
+#### Use the total number of actions per day with particular topic focus as the fixed effects
+
+```{r}
+lme_4.2_dat <- lme_4_dat %>% select(starts_with("tot"), cl4, SC_FE_TOT)
+
+plot.correlations(lme_4.2_dat)
+
+# remove tot_metacog_cnt as highly correlated with several other variables; also, tot_revisit_cnt has zero correlation with the final exam score
+lme_4.2_dat <- lme_4.2_dat %>% select(-c(tot_metacog_cnt, tot_revisit_cnt))
+```
+
+```{r}
+set.seed(seed)
+lme_4.2 <- lmer(SC_FE_TOT ~ tot_ontopic_cnt + tot_orient_cnt + tot_prj_cnt + (1|cl4), 
+                data = lme_4.2_dat, REML = FALSE)
+summary(lme_4.2)
+
+```
+
+```{r}
+r.squaredGLMM(lme_4.2)
+```
+
+Very poor model...
+
+
+#### Cosider using indicators of regularity of topic focus as the fixed effects
+
+```{r}
+lme_4.3_dat <- lme_4_dat %>% select(starts_with("mad"), cl4, SC_FE_TOT)
+
+plot.correlations(lme_4.3_dat)
+```
+
+Better not to, since the mad_X_cnt variables have very low correlation with the final exam score - significant fixed effect cannot be expected.
+
+
+### Model 5: Weekly resource use indicators as fixed effects
+
+Indicators are computed at the week level, based on the following principle: a score of one is given to a student (for a given week), if he/she used certain kind of resource (e.g. video) more than the average (median) use of the that resource type in the given week
+
+Loading the data
+```{r results='hide'}
+res.use.ind <- read.csv("Intermediate_results/regularity_of_study/res_use_indicators_w2-13.csv")
+str(res.use.ind)
+
+lme_5_dat <- merge(x = res.use.ind, y = clust.and.scores,
+                  by = "user_id", all.x = FALSE, all.y = TRUE)
+
+lme_5_dat <- lme_5_dat %>% select(-user_id)
+
+summary(lme_5_dat)
+
+plot.correlations(lme_5_dat)
+
+# res_ind and MCQ_ind are highly correlated, remove one of them
+lme_5_dat <- lme_5_dat %>% select(-VIDEO_ind)
+```
+
+```{r}
+set.seed(seed)
+lme_5 <- lmer(SC_FE_TOT ~ MCQ_ind + EXE_ind + RES_ind + METACOG_ind + (1|cl4), 
+                data = lme_5_dat, REML = FALSE)
+summary(lme_5)
+
+```
+Predictors with significant effect:
+
+* MCQ_ind - a unit increase of this indicator (ie, one week more when a student's use of MCQs is higher than the average (median) use of MCQ in that week), increases the final exam score by 0.7786 points 
+* EXE_ind - a unit increase of this indicator (ie, one week more when a student's use of exercises is higher than the average (median) use of exercises in that week), *decreases* the exam score by 0.9767 points
+* RES_ind - a unit increase of this indicator (ie, one week more when a student's use of reading materias is higher than the average (median) use of reading content in that week), increases the exam score by 0.355 points.
+
+Compare the model with the baseline
+```{r}
+lme_5_base <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_5_dat, REML = FALSE)
+anova(lme_5, lme_5_base)
+```
+The model is significantly better than the baseline.
+
+
+```{r}
+r.squaredGLMM(lme_5)
+```
+The best model so far: it explains 29.24% of the variability in the final exam score; out of that, 18.35% are explained by the fixed factors. 
+
+Checking if model assumptions are satisfied
+```{r results='hide'}
+# if residuals are normally distributed and if equality of variance holds
+check.residuals(lme_5)
+check.residuals2(lme_5)
+
+# check for multicolinearity
+max(vif.mer(lme_5))
+```
+It can be said that the assumptions hold
+
+
+### Model 6: Topic focus indicators as fixed effects
+
+Indicators are computed at the week level, based on the following principle:
+a score of one is given to a student (for a given week), if his/her number of events related to a particular topic type (e.g. revisiting) was above the average (median) number of events with that topic type in the given week
+
+Weeks 6 and 13 are excluded from these computations, as during these weeks one can expect  different behavioral patterns than usual.
+
+Loading the data
+```{r results='hide'}
+topic.ind <- read.csv("Intermediate_results/regularity_of_study/topic_based_indicators_w2-5_7-12.csv")
+str(topic.ind)
+
+lme_6_dat <- merge(x = topic.ind, y = clust.and.scores,
+                  by = "user_id", all.x = FALSE, all.y = TRUE)
+
+lme_6_dat <- lme_6_dat %>% select(-user_id)
+
+summary(lme_6_dat)
+
+plot.correlations(lme_6_dat)
+
+# orient_ind and metacog_ind are highly correlated, remove one of them
+lme_6_dat <- lme_6_dat %>% select(-orient_ind)
+```
+
+```{r}
+set.seed(seed)
+lme_6 <- lmer(SC_FE_TOT ~ ontopic_ind + revisit_ind + metacog_ind + prj_ind + (1|cl4), 
+                data = lme_6_dat, REML = FALSE)
+summary(lme_6)
+```
+Significant fixed effects:
+
+* ontopic_ind - a unit increase in this indicator (ie, one week more when a student's number of 'ontopic' events is higher than the average (median) number of 'ontopic' events in that week), increases the final exam score by 0.5185 points 
+* revisit_ind - a unit increase in this indicator (ie, one week more when a student's number of 'revisitng' events is higher than the average (median) number of 'revisitng' events in that week), *decreases* the final exam score by 0.4426 points
+
+Compare the model with the baseline
+```{r}
+lme_6_base <- lmer(SC_FE_TOT ~ 1 + (1|cl4), data = lme_6_dat, REML = FALSE)
+anova(lme_6, lme_6_base)
+```
+The model is significantly better than the baseline.
+
+```{r}
+r.squaredGLMM(lme_6)
+```
+The model explains 19.42% of the variability in the final exam score; out of that, 4.18% are explained by the fixed factors. 
+
+Checking if model assumptions are satisfied
+```{r results='hide'}
+# if residuals are normally distributed and if equality of variance holds
+check.residuals(lme_6)
+#check.residuals2(lme_6)
+
+# check for multicolinearity
+max(vif.mer(lme_6))
+```
+It's fine - the assumptions hold.
+
+
+### Model 7: Time gap (in days) between two consecutive active days (as fixed effect)
+
+Loading the data
+```{r results='hide'}
+reg.ind <- read.csv("Intermediate_results/regularity_of_study/gaps_between_consecutive_logins_w2-13.csv")
+str(reg.ind)
+
+lme_7_dat <- merge(x = reg.ind %>% select(user_id, median_gap), y = clust.and.scores,
+                  by = "user_id", all.x = FALSE, all.y = TRUE)
+
+lme_7_dat <- lme_7_dat %>% select(-user_id)
+
+summary(lme_7_dat)
+
+plot.correlations(lme_7_dat)
+```
+
+```{r}
+set.seed(seed)
+lme_7 <- lmer(SC_FE_TOT ~ median_gap + (1|cl4), 
+                data = lme_7_dat, REML = FALSE)
+summary(lme_7)
+```
+Median gap, measured in days, is significant: one unit (day) increase in this predictor leads to a 1.01 decrase in the student's final exam score.
+
+```{r}
+r.squaredGLMM(lme_7)
+```
+The model explains 15.11% of the variability in the final exam score; out of that, only 2.5% are explained by the fixed factors. 
+
+Checking if model assumptions are satisfied
+```{r results='hide'}
+# if residuals are normally distributed and if equality of variance holds
+check.residuals(lme_7)
+#check.residuals2(lme_6)
+
+# check for multicolinearity
+max(vif.mer(lme_7))
+```
+It's fine - the assumptions hold.
+
+
+### Model 8: Fixed effects are significant predictors from the best regular regression model (Model 13) 
+
+Loading the data
+```{r}
+res.use.ind <- read.csv("Intermediate_results/regularity_of_study/res_use_indicators_w2-13.csv")
+weekday.sessions <- read.csv("Intermediate_results/regularity_of_study/weekday_session_props.csv")
+weekly.sessions <- read.csv("Intermediate_results/regularity_of_study/weekly_session_props.csv")
+
+lme_8_data <- merge(x = res.use.ind %>% select(user_id, MCQ_ind, EXE_ind),
+                    y = weekday.sessions %>% select(user_id, Mon_count, Tue_count, Thu_count,
+                                                    weekday_entropy), 
+                    by = "user_id", all = TRUE)
+lme_8_data <- merge(x = lme_8_data, y = weekly.sessions %>% select(user_id, weekly_entropy),
+                    by = "user_id", all = TRUE)
+lme_8_data <- merge(x = lme_8_data, y = clust.and.scores, 
+                    by = "user_id", all.x = FALSE, all.y = TRUE)
+#summary(lme_8_data)
+
+plot.correlations(lme_8_data %>% select(-user_id))
+```
+
+```{r}
+set.seed(seed)
+lme_8 <- lmer(SC_FE_TOT ~ MCQ_ind + EXE_ind + Mon_count + Tue_count + Thu_count + 
+                + weekday_entropy + weekly_entropy + (1|cl4), 
+                data = lme_8_data, REML = FALSE)
+summary(lme_8)
+```
+All fixed effects are significant; all except EXE_ind have positive association with the final exam score.
+Note: regarding the entropy, the higher the entropy, the more regular the observed behavior (closer to uniform distribution).
+
+
+```{r}
+r.squaredGLMM(lme_8)
+```
+The best model so far: it explains 34.53% of the variability in the final exam score; practically, all the variability is explained by the fixed factors. 
+
+
+Checking if model assumptions are satisfied
+```{r results='hide'}
+# if residuals are normally distributed and if equality of variance holds
+check.residuals(lme_8)
+#check.residuals2(lme_8)
+# few outliers, but generally OK
+
+# check for multicolinearity
+max(vif.mer(lme_8))
+# OK
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

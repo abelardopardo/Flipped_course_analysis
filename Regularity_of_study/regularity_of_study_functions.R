@@ -193,26 +193,27 @@ regularity.session.intervals <- function(sessions) {
 ##  -- number of inactive weeks
 ##  -- SD and MAD of weekly sessions proportions
 ##  -- entropy of weekly session 
-compute.weekly.counts <- function(sessions) {
+## the 2nd argument is a vector of weeks to be considered
+compute.weekly.counts <- function(sessions, weeks) {
   students <- unique(sessions$user_id)
-  s.matrix <- matrix(nrow = length(students), ncol=16)
+  s.matrix <- matrix(nrow = length(students), ncol=(6+length(weeks)))
   s <- 1
   
-  shapiro.pvals <- vector(mode = 'numeric', length = length(students))
+#  shapiro.pvals <- vector(mode = 'numeric', length = length(students))
   
   for(i in 1:length(students)) {
     s.sessions <- subset(sessions, user_id==students[i])
     s.tot <- nrow(s.sessions)
-    weekly.sessions <- vector(mode = 'numeric', length = 10) ## weeks 6 and 13 are excluded
-    weekly.proportions <- vector(mode = 'numeric', length = 10)
+    weekly.sessions <- vector(mode = 'numeric', length = length(weeks)) 
+    weekly.proportions <- vector(mode = 'numeric', length = length(weeks))
     wn <- 1
-    for(w in c(2:5,7:12)) {
+    for(w in weeks) {
       weekly.sessions[wn] <- length(which(s.sessions$week==w))
       weekly.proportions[wn] <- weekly.sessions[wn]/s.tot
       wn <- wn + 1
     }
     
-    shapiro.pvals[s] <- shapiro.test(weekly.proportions)$p.value
+#    shapiro.pvals[s] <- shapiro.test(weekly.proportions)$p.value
     
     weeks.inactive <- length(which(weekly.sessions==0))
     weekly.sd <- sd(weekly.proportions)
@@ -223,11 +224,11 @@ compute.weekly.counts <- function(sessions) {
     s <- s + 1
   }
   
-  above_0.05 <- length(which(shapiro.pvals > 0.05))
-  print(paste("Proportion of students with normal dist for weekly proportions:", above_0.05/length(students)))
+  # above_0.05 <- length(which(shapiro.pvals > 0.05))
+  # print(paste("Proportion of students with normal dist for weekly proportions:", above_0.05/length(students)))
   
   counts.df <- data.frame(s.matrix)
-  colnames(counts.df) <- c('user_id', 's_total', paste0('count_w',c(2:5,7:12)), 
+  colnames(counts.df) <- c('user_id', 's_total', paste0('count_w',weeks), 
                            'inactive_weeks', 'weekly_prop_sd', 'weekly_prop_mad', 'weekly_entropy')
   counts.df
 }
@@ -886,6 +887,196 @@ get.prev.weeks.topics <- function(week) {
   t
 }
 
+
+## for each type of entity (given in entity.types), the f. computes the number of weeks,
+## within the weeks.to.include, when that type of entity (resource such as video, or topic focus
+## such as revisiting) was used/present above the median level; weeks with above median level are
+## marked as 1 in the w.indicators df
+compute.engagement.indicator <- function(w.indicators, weeks.to.include, entity.types) {
+  
+  m <- matrix(nrow = nrow(w.indicators), ncol = (1 + length(entity.types)))
+  c <- 1
+  col.names <- colnames(w.indicators) 
+  for(s in w.indicators$user_id) {
+    stud.data <- w.indicators %>% filter(user_id==s)
+    entity.counts <- s
+    for(e in entity.types) {
+      pattern <- paste0("W\\d{1,2}_", e, "_bin")
+      entity.col.names <- col.names[grep(pattern, col.names)]
+      all.weeks <- sub(pattern = "_.*_bin", replacement = "", entity.col.names)
+      all.weeks <- as.numeric(sub("^W", "", all.weeks))
+      w.cnt <- stud.data %>% 
+        select(one_of(entity.col.names[which(all.weeks %in% weeks.to.include)])) %>% 
+        as.vector() 
+      entity.counts <- c(entity.counts, sum(w.cnt))
+    }
+    m[c,] <- entity.counts
+    c <- c + 1
+  }
+  sum.indicators <- data.frame(m)
+  colnames(sum.indicators) <- c('user_id', paste0(entity.types, "_ind")) 
+  sum.indicators
+}
+
+
+# the f. computes, for each student and each week of the course the proportion of 
+# - correctly solved MCQs
+# - incorrectly solved MCQs
+# - solution was requested for MCQ
+# - correctly solved exercises
+# - incorrectly solved exercises
+# the second argument - weeks - is a vector of weeks to be considered
+# in computations
+weekly.prop.of.assessment.actions <- function(events, weeks) {
+  
+  students <- unique(events$user_id)
+  
+  n.weeks <- length(weeks)
+  ## number of columns: 1 + n.weeks * 5 (5 types of assessment actions) + 2 * 5 (SD and MAD for each type of assessment action)
+  ## user_id
+  ## for each week (n.weeks), we need 5 variables (proportions),
+  ## one for each type of action ("FA_CO", "FA_IN", "FA_SR", "SA_CO", "SA_IN")
+  ## for each type of action, we need 2 regularity indicators (SD, MAD)
+  result.matrix <- matrix(nrow = length(students), ncol=(1 + n.weeks*5 + 2*5)) 
+  s <- 1
+  
+  for(stud in students) {
+    stud.events <- subset(events, user_id==stud)
+    
+    ## matrix for keeping the computed data about the given student
+    stud.matrix <- matrix(nrow = n.weeks, ncol = 5) 
+    c <- 1
+    
+    ## consider each week individualy
+    for(w in weeks) {
+      stud.weekly.events <- subset(stud.events, week==w)
+      # in case the student didn't have any events in the given week
+      if (nrow(stud.weekly.events) == 0) {
+        stud.matrix[c,] <- rep(0, times=5)
+        c <- c + 1
+        next
+      } 
+      
+      fa.tot <- nrow(stud.weekly.events %>% filter( action %in% c("FA_CO", "FA_IN", "FA_SR")))
+      sa.tot <- nrow(stud.weekly.events %>% filter( action %in% c("SA_CO", "SA_IN")))
+      
+      if (fa.tot > 0) {
+        stud.matrix[c,1] <- nrow(stud.weekly.events %>% filter( action == "FA_CO"))/fa.tot
+        stud.matrix[c,2] <- nrow(stud.weekly.events %>% filter( action == "FA_IN"))/fa.tot
+        stud.matrix[c,3] <- nrow(stud.weekly.events %>% filter( action == "FA_SR"))/fa.tot
+      } else {
+        stud.matrix[c,1:3] <- 0
+      }
+      
+      if (sa.tot > 0) {
+        stud.matrix[c,4] <- nrow(stud.weekly.events %>% filter( action == "SA_CO"))/sa.tot
+        stud.matrix[c,5] <- nrow(stud.weekly.events %>% filter( action == "SA_IN"))/sa.tot
+      } else {
+        stud.matrix[c,4:5] <- 0
+      }
+      
+      c <- c + 1  
+      
+    }
+    
+    # compute and print results of shapiro test
+    # shapiro <- as.vector(apply(stud.matrix, 2, function(x) shapiro.test(x)$p.value))
+    # print(paste0("student: ", stud, " shapiro test results:", paste(shapiro, collapse = " ")))
+    
+    # compute deviation for each type of action/outcome
+    weekly.sd <- as.vector(apply(stud.matrix, 2, sd))
+    weekly.mad <- as.vector(apply(stud.matrix, 2, mad))
+    
+    stud.all.dat <- stud
+    for(i in 1:(c-1))
+      stud.all.dat <- c(stud.all.dat, stud.matrix[i,])
+    stud.all.dat <- c(stud.all.dat, weekly.sd, weekly.mad)
+    
+    result.matrix[s,] <- stud.all.dat
+    s <- s + 1
+    
+  }
+  
+  result.df <- data.frame(result.matrix)
+  ## create column names
+  outcomes <- c("FA_CO", "FA_IN", "FA_SR", "SA_CO", "SA_IN")
+  reg.ind <- paste0("SD", "_", outcomes)
+  reg.ind <- c(reg.ind, paste0("MAD", "_", outcomes))
+  cnames <- 'user_id'
+  for(w in weeks) {
+      cnames <- c(cnames, paste0('W',w,'_', outcomes))
+  }
+  cnames <- c(cnames, reg.ind)
+  colnames(result.df) <- cnames
+  
+  result.df
+}
+
+
+# the f. computes, for each student, weekly counts of the following 
+# types of assessment actions:
+# - correctly solved MCQs
+# - incorrectly solved MCQs
+# - solution was requested for MCQ
+# - correctly solved exercises
+# - incorrectly solved exercises
+# Based on these counts, the f. computes entropy for each
+# type of assessment action 
+weekly.entropy.of.assessment.actions <- function(events, weeks) {  
+  
+  students <- unique(events$user_id)
+  
+  ## number of columns:
+  ## - 1 for user_id
+  ## - 5 for entropy for each assessment type ("FA_CO", "FA_IN", "FA_SR", "SA_CO", "SA_IN"),
+  result.matrix <- matrix(nrow = length(students), ncol=6) 
+  s <- 1
+  
+  for(stud in students) {
+    stud.events <- subset(events, user_id==stud)
+    
+    ## matrix for keeping the computed data about the given student
+    stud.matrix <- matrix(nrow = length(weeks), ncol = 5) 
+    c <- 1
+    
+    ## consider each week individualy
+    for(w in weeks) {
+      stud.weekly.events <- subset(stud.events, week==w)
+      # in case the student didn't have any events in the given week
+      if (nrow(stud.weekly.events) == 0) {
+        stud.matrix[c,] <- rep(0, times=5)
+        c <- c + 1
+        next
+      } 
+      
+      stud.matrix[c,1] <- nrow(stud.weekly.events %>% filter( action == "FA_CO"))
+      stud.matrix[c,2] <- nrow(stud.weekly.events %>% filter( action == "FA_IN"))
+      stud.matrix[c,3] <- nrow(stud.weekly.events %>% filter( action == "FA_SR"))
+      stud.matrix[c,4] <- nrow(stud.weekly.events %>% filter( action == "SA_CO"))
+      stud.matrix[c,5] <- nrow(stud.weekly.events %>% filter( action == "SA_IN"))
+
+      c <- c + 1  
+    }
+    
+    # compute proportions for each type of action/outcome
+    stud.prop <- matrix(nrow = 5, ncol = length(weeks))
+    stud.entropy <- vector(mode = "numeric", length = 5)
+    for(i in 1:5) {
+      stud.prop[i,] <- stud.matrix[,i]/(sum(stud.matrix[,i])+1) # add 1 to avoid NaNs
+      stud.entropy[i] <- -sum(sapply(stud.prop[i,], function(p) {p * log1p(p)}))      
+    }
+    
+    result.matrix[s,] <- c(stud, stud.entropy)
+    s <- s + 1
+    
+  }
+  
+  result.df <- data.frame(result.matrix)
+  colnames(result.df) <- c("user_id", "FA_CO_entropy", "FA_IN_entropy", "FA_SR_entropy", 
+                           "SA_CO_entropy", "SA_IN_entropy")
+  
+  result.df
+}
 
 ## f. for Winsorizing a variable  
 ## taken from: https://www.r-bloggers.com/winsorization/

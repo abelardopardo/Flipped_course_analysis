@@ -1,0 +1,590 @@
+---
+title: "Predictive models with best performing predictors using cumulative weekly data"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+
+# load the required libraries and functions
+library(tidyverse)
+library(knitr)
+library(car)
+library(bootstrap)
+library(DAAG)
+
+# for correlation plots
+source("https://raw.githubusercontent.com/briatte/ggcorr/master/ggcorr.R")
+source("regularity_of_study_functions.R")
+```
+
+```{r include=FALSE}
+## some auxiliary functions
+
+plot.correlations <- function(dataset) {
+  ggcorr(dataset, method = c("complete","spearman"), 
+       #      geom = "circle", min_size = 0, max_size = 15,
+       label = TRUE, label_size = 3.5,
+       hjust = 0.85, size = 4, layout.exp = 1)
+}
+
+create.dataset <- function(session_data, res_use_ind, res_types, start_week, end_week) {
+  
+  weekly.counts <- compute.weekly.counts(sessions = session_data %>% 
+                                           filter(week %in% c(start_week:end_week)),
+                                         weeks = c(start_week:end_week))
+  
+  weekday.counts <- make.weekdays.counts(session_data %>% 
+                                           filter(week %in% c(start_week:end_week)))
+
+  res.sum.ind <- compute.engagement.indicator(res_use_ind, c(start_week:end_week), res_types)
+
+  lm_data <- merge(x = res.sum.ind, 
+                   y = weekday.counts %>% select(user_id, Mon_count, Tue_count, Thu_count,
+                                                 weekday_entropy), 
+                   by = "user_id", all = TRUE)
+  
+  lm_data <- merge(x = lm_data, y = weekly.counts %>% select(user_id, weekly_entropy),
+                   by = "user_id", all = TRUE)
+
+  lm_data <- merge(x = lm_data, y = exam.scores,
+                   by.x = "user_id", by.y = "USER_ID", all.x = TRUE, all.y = FALSE)
+
+  
+  lm_data <- lm_data %>% filter(is.na(SC_FE_TOT)==FALSE)
+  
+  lm_data
+
+}
+
+getR2 <- function(lm) {
+  summary(lm)$r.squared
+}
+
+getAdjR2 <- function(lm) {
+  summary(lm)$adj.r.squared
+}
+
+
+## f. for assessing R2 shrinkage using 10-Fold Cross-Validation
+## the f. returns a vector of 2 elements: raw R2 and cross-validated R2
+## (based on instructions from: http://www.statmethods.net/stats/regression.html)
+compute.CV.R2 <- function(features, outcome, lmod) {
+  
+  # define auxiliary functions 
+  theta.fit <- function(x,y){lsfit(x,y)}
+  theta.predict <- function(fit,x){cbind(1,x)%*%fit$coef}
+
+  # matrix of predictors
+  X <- as.matrix(features)
+  # vector of predicted values
+  y <- as.matrix(outcome) 
+
+  results <- crossval(X, y, theta.fit, theta.predict, ngroup=10)
+  raw.R2 <- cor(y, lmod$fitted.values)**2 
+  cv.R2 <- cor(y, results$cv.fit)**2
+  c(raw_R2=raw.R2, cv_R2=cv.R2)
+  
+}
+
+## f. for computing 10-fold cross-validated standard error of prediction
+## (based on instructions from: http://www.statmethods.net/stats/regression.html)
+compute.CV.stand.error <- function(features, lmod) {
+  cv.out <- cv.lm(data=features, form.lm = lmod, m = 10) # 10 fold cross-validation
+  # take the square root of the MSE to get the standard error of the estimate
+  sqrt(attr(x = cv.out, which = "ms"))
+}
+
+```
+
+
+Loading the required data...
+```{r}
+session.data <- readRDS("Intermediate_results/filtered_sessions_w2to13.RData")
+
+res.use.ind <- read.csv("Intermediate_results/regularity_of_study/res_use_above_median_indicators_w2-13.csv") 
+
+exam.scores <- read.csv(file = "Intermediate_results/exam_scores_with_student_ids.csv")
+# remove email data
+exam.scores <- exam.scores %>% select(-2)
+```
+
+
+### Model BestRM: the best regular regression model with data for weeks 2-X (X=3:13)
+
+The models should include the following predictors that were all significant in the best regression model with the whole course data:
+
+* MCQ_ind         
+* EXE_ind         
+* Mon_count 
+* Tue_count 
+* Thu_count 
+* weekday_entropy 
+* weekly_entropy
+
+
+
+#### Model BestRM_weeks_2-3
+
+```{r results='hide'}
+lm_w23_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 3)
+
+plot.correlations(lm_w23_data %>% select(-user_id))
+```
+
+##### Regression model with final exam score as the outcome variable
+```{r}
+lm_w23_fe <- lm(SC_FE_TOT ~ ., data = lm_w23_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w23_fe)
+```
+Significant predictors: EXE_ind, Mon_count, Tue_count, Thu_count, weekday_entropy
+Not significant: MCQ_ind, weekly_entropy
+
+R-squared: 0.2245	(adjusted R-squared: 0.2129).
+
+```{r}
+lm_w23_cv_R2 <- compute.CV.R2(lm_w23_data[,-c(1,9,10)], lm_w23_data$SC_FE_TOT, lm_w23_fe)
+lm_w23_cv_R2[2]
+```
+Cross-validated R-squared: `r lm_w23_cv_R2[2]`
+
+For the sake of comparison, values for R-squared and adj. R-squared for the model with the same predictors and all the course weeks are 0.349 and 0.338, respectively.
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w23_cv_err <- compute.CV.stand.error(lm_w23_data[,-c(1,9)], lm_w23_fe)
+```
+`r lm_w23_cv_err` 
+Max final exam score: 40; so, the error is `r (lm_w23_cv_err*100)/40` percent.
+
+
+##### Regression model with midterm exam score as the outcome variable
+```{r}
+lm_w23_mt <- lm(SC_MT_TOT ~ ., data = lm_w23_data %>% select(-c(user_id, SC_FE_TOT)))
+summary(lm_w23_mt)
+```
+Significant predictors: MCQ_ind, EXE_ind, Mon_count, Tue_count, weekly_entropy, weekday_entropy
+Not significant: Thu_count
+
+R-squared: 0.2216	(adjusted R-squared: 0.21).
+
+```{r}
+lm_w23_mt_cv_R2 <- compute.CV.R2(lm_w23_data[,-c(1,9,10)], lm_w23_data$SC_MT_TOT, lm_w23_mt)
+#lm_w23_mt_cv_R2[2]
+```
+Cross-validated R-squared: `r lm_w23_mt_cv_R2[2]`
+
+For the sake of comparison, values for R-squared and adj. R-squared for the model with the same predictors and course weeks before the midterm (weeks 2-5) are 0.2775 and 0.2667, respectively.
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w23_mt_cv_err <- compute.CV.stand.error(lm_w23_data[,-c(1,10)], lm_w23_mt)
+```
+`r lm_w23_mt_cv_err` 
+Max midterm exam score: 20; so the error is `r (lm_w23_mt_cv_err*100)/20` percent.
+
+
+#### Model BestRM_weeks_2-4
+
+```{r results='hide'}
+lm_w24_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 4)
+
+plot.correlations(lm_w24_data %>% select(-user_id))
+```
+
+##### Regression model with final exam score as the outcome variable
+```{r}
+lm_w24_fe <- lm(SC_FE_TOT ~ ., data = lm_w24_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w24_fe)
+```
+
+Having added the data for week 4, all predictors become significant.
+
+Only slight improvement in the predicitve power (R-square: `r summary(lm_w24_fe)$r.squared`) over the model with data from weeks 2-3 (R-square: `r summary(lm_w23_fe)$r.squared`). 
+
+```{r}
+lm_w24_cv_R2 <- compute.CV.R2(lm_w24_data[,-c(1,9,10)], lm_w24_data$SC_FE_TOT, lm_w24_fe)
+#lm_w24_cv_R2[2]
+```
+Cross-validated R-squared: `r lm_w24_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w24_cv_err <- compute.CV.stand.error(lm_w24_data[,-c(1,9)], lm_w24_fe)
+```
+`r lm_w24_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w24_cv_err*100)/40` percent.
+
+
+
+##### Regression model with midterm exam score as the outcome variable
+```{r}
+lm_w24_mt <- lm(SC_MT_TOT ~ ., data = lm_w24_data %>% select(-c(user_id, SC_FE_TOT)))
+summary(lm_w24_mt)
+```
+
+Significant predictors: MCQ_ind, EXE_ind, weekly_entropy, weekday_entropy
+Not significant: Mon_count, Tue_count, Thu_count
+
+Only slight improvement in the predicitve power (R-square: `r summary(lm_w24_mt)$r.squared`) over the model with data from weeks 2-3 (R-square: `r summary(lm_w23_mt)$r.squared`). 
+
+```{r}
+lm_w24_mt_cv_R2 <- compute.CV.R2(lm_w24_data[,-c(1,9,10)], lm_w23_data$SC_MT_TOT, lm_w24_mt)
+#lm_w24_mt_cv_R2[2]
+```
+Cross-validated R-squared: `r lm_w24_mt_cv_R2[2]`
+
+For the sake of comparison, values for R-squared and adj. R-squared for the model with the same predictors and course weeks before the midterm (weeks 2-5) are 0.2775 and 0.2667, respectively.
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w24_mt_cv_err <- compute.CV.stand.error(lm_w24_data[,-c(1,10)], lm_w24_mt)
+```
+`r lm_w24_mt_cv_err` 
+Max midterm exam score: 20; so the error is `r (lm_w24_mt_cv_err*100)/20` percent.
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm_w24_mt$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm_w24_mt)
+par(mfrow=c(1,1)) # Change back to 1 x 1
+# there are few outliers, in particular: 326, 69, 50; and a few potentially influential points
+
+# assumption 4: no influential points
+inf.indices <- head(sort(cooks.distance(lm_w24_mt), decreasing = T))
+inf.indices
+lm_w24_data[as.numeric(names(inf.indices)),]
+# probable influential points: 259, 95, 50, 69
+
+## assumption 5: predictors and residuals are uncorrelated
+for(c in 2:8)
+  print(cor.test(lm_w24_data[,c], lm_w24_mt$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm_w24_mt)
+# OK, values below or equal to 2
+```
+The homoscedasticity of residuals is questionable; this seems to be due to a couple of influential point; should be consider for removal
+
+
+#### Model BestRM_weeks_2-5
+
+```{r results='hide'}
+lm_w25_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 5)
+#summary(lm_w25_data)
+
+plot.correlations(lm_w25_data %>% select(-user_id))
+```
+
+##### Regression model with final exam score as the outcome variable
+```{r}
+lm_w25_fe <- lm(SC_FE_TOT ~ ., data = lm_w25_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w25_fe)
+```
+
+All predictors are significant.
+
+Slight improvement in the predicitve power (R-square: `r summary(lm_w25_fe)$r.squared`) over the model with data from weeks 2-4 (R-square: `r summary(lm_w24_fe)$r.squared`). 
+
+```{r}
+lm_w25_cv_R2 <- compute.CV.R2(lm_w25_data[,-c(1,9,10)], lm_w25_data$SC_FE_TOT, lm_w25_fe)
+#lm_w25_cv_R2[2]
+```
+Cross-validated R-squared: `r lm_w25_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w25_cv_err <- compute.CV.stand.error(lm_w25_data[,-c(1,9)], lm_w25_fe)
+```
+`r lm_w25_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w25_cv_err*100)/40` percent.
+
+
+Checking if the model satisfies the assumptions for linear regression:
+```{r results='hide'}
+# assumption 1: the mean of residuals is zero
+mean(lm_w25_fe$residuals)
+# OK
+
+# assumption 2: homoscedasticity of residuals or equal variance
+# assumption 3: Normality of residuals
+par(mfrow=c(2, 2))
+plot(lm_w25_fe)
+par(mfrow=c(1,1)) # Change back to 1 x 1
+# there are few outliers: 86, 50, 459; and a few potentially influential points
+
+# assumption 4: no influential points
+inf.indices <- head(sort(cooks.distance(lm_w25_fe), decreasing = T))
+inf.indices
+# lm_w25_data[as.numeric(names(inf.indices)),]
+# the only real candidate for an influential point is 459
+
+## assumption 5: predictors and residuals are uncorrelated
+for(c in 2:8)
+  print(cor.test(lm_w25_data[,c], lm_w25_fe$residuals))
+# OK
+
+## assumption 6: no multicolinearity between explanatory variables
+vif(lm_w25_fe)
+# OK, values below or equal to 2
+```
+All assumptions are satisified, though there is one potentially influential point
+
+
+##### Regression model with midterm exam score as the outcome variable
+```{r}
+lm_w25_mt <- lm(SC_MT_TOT ~ ., data = lm_w25_data %>% select(-c(user_id, SC_FE_TOT)))
+summary(lm_w25_mt)
+```
+
+The model predicting midterm exam score has only slightly higher predictive power (`r summary(lm_w25_mt)$r.squared`) than the one predicting final exam score (`r summary(lm_w25_fe)$r.squared`)
+
+
+```{r}
+lm_w25_mt_cv_R2 <- compute.CV.R2(lm_w25_data[,-c(1,9,10)], lm_w25_data$SC_MT_TOT, lm_w25_mt)
+lm_w25_mt_cv_R2[2]
+```
+Cross-validated R-squared: `r lm_w25_mt_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w25_mt_cv_err <- compute.CV.stand.error(lm_w25_data[,-c(1,10)], lm_w25_mt)
+```
+`r lm_w25_mt_cv_err` 
+Max final exam score: 20; so the error is `r (lm_w25_mt_cv_err*100)/20` percent.
+
+
+#### Model BestRM_weeks_2-7
+
+```{r results='hide'}
+lm_w27_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 7)
+
+plot.correlations(lm_w27_data %>% select(-user_id))
+```
+
+
+```{r}
+lm_w27 <- lm(SC_FE_TOT ~ ., data = lm_w27_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w27)
+```
+Significant predictors: MCQ_ind, EXE_ind, Mon_count, Thu_count, weekly_entropy, weekday_entropy
+Not significant: Tue_count
+
+Slight improvement in the predicitve power (R-square: `r summary(lm_w27)$r.squared`) over the model with data from weeks 2-5 (R-square: `r summary(lm_w25_fe)$r.squared`). 
+
+
+```{r}
+lm_w27_cv_R2 <- compute.CV.R2(lm_w27_data[,-c(1,9,10)], lm_w27_data$SC_FE_TOT, lm_w27)
+```
+Cross-validated R-squared: `r lm_w27_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w27_cv_err <- compute.CV.stand.error(lm_w27_data[,-c(1,9)], lm_w27)
+```
+`r lm_w27_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w27_cv_err*100)/40` percent.
+
+
+#### Model BestRM_weeks_2-8
+
+```{r results='hide'}
+lm_w28_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 8)
+```
+
+
+```{r}
+lm_w28 <- lm(SC_FE_TOT ~ ., data = lm_w28_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w28)
+```
+
+Significant predictors: MCQ_ind, EXE_ind, Mon_count, Thu_count, weekly_entropy, weekday_entropy
+Not significant: Tue_count
+
+Only very slight improvement in the predicitve power (R-square: `r summary(lm_w28)$r.squared`) over the model with data from weeks 2-7 (R-square: `r summary(lm_w27)$r.squared`). 
+
+```{r}
+lm_w28_cv_R2 <- compute.CV.R2(lm_w28_data[,-c(1,9,10)], lm_w28_data$SC_FE_TOT, lm_w28)
+```
+Cross-validated R-squared: `r lm_w28_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w28_cv_err <- compute.CV.stand.error(lm_w28_data[,-c(1,9)], lm_w28)
+```
+`r lm_w28_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w28_cv_err*100)/40` percent.
+
+
+#### Model BestRM_weeks_2-9
+
+```{r results='hide'}
+lm_w29_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 9)
+```
+
+
+```{r}
+lm_w29 <- lm(SC_FE_TOT ~ ., data = lm_w29_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w29)
+```
+
+Significant predictors: MCQ_ind, EXE_ind, Mon_count, Thu_count, weekly_entropy, weekday_entropy
+Not significant: Tue_count
+
+Only very slight improvement in the predicitve power (R-square: `r summary(lm_w29)$r.squared`) over the model with data from weeks 2-8 (R-square: `r summary(lm_w28)$r.squared`). 
+
+```{r}
+lm_w29_cv_R2 <- compute.CV.R2(lm_w29_data[,-c(1,9,10)], lm_w29_data$SC_FE_TOT, lm_w29)
+```
+Cross-validated R-squared: `r lm_w29_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w29_cv_err <- compute.CV.stand.error(lm_w29_data[,-c(1,9)], lm_w29)
+```
+`r lm_w29_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w29_cv_err*100)/40` percent.
+
+
+#### Model BestRM_weeks_2-10
+
+```{r results='hide'}
+lm_w210_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 10)
+```
+
+
+```{r}
+lm_w210 <- lm(SC_FE_TOT ~ ., data = lm_w210_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w210)
+```
+
+Significant predictors: MCQ_ind, EXE_ind, Mon_count, Thu_count, weekly_entropy, weekday_entropy
+Not significant: Tue_count
+
+Only very slight improvement in the predicitve power (R-square: `r summary(lm_w210)$r.squared`) over the model with data from weeks 2-9 (R-square: `r summary(lm_w29)$r.squared`). 
+
+```{r}
+lm_w210_cv_R2 <- compute.CV.R2(lm_w210_data[,-c(1,9,10)], lm_w210_data$SC_FE_TOT, lm_w210)
+```
+Cross-validated R-squared: `r lm_w210_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w210_cv_err <- compute.CV.stand.error(lm_w210_data[,-c(1,9)], lm_w210)
+```
+`r lm_w210_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w210_cv_err*100)/40` percent.
+
+
+#### Model BestRM_weeks_2-11
+
+```{r results='hide'}
+lm_w211_data <- create.dataset(session.data, res.use.ind, c("MCQ", "EXE"), start_week = 2, end_week = 11)
+```
+
+
+```{r}
+lm_w211 <- lm(SC_FE_TOT ~ ., data = lm_w211_data %>% select(-c(user_id, SC_MT_TOT)))
+summary(lm_w211)
+```
+
+All predictors are significant.
+
+Slight improvement in the predicitve power (R-square: `r summary(lm_w211)$r.squared`) over the model with data from weeks 2-10 (R-square: `r summary(lm_w210)$r.squared`). 
+
+```{r}
+lm_w211_cv_R2 <- compute.CV.R2(lm_w211_data[,-c(1,9,10)], lm_w211_data$SC_FE_TOT, lm_w211)
+```
+Cross-validated R-squared: `r lm_w211_cv_R2[2]`
+
+Cross-validated standard error of prediction:
+```{r include=FALSE}
+lm_w211_cv_err <- compute.CV.stand.error(lm_w211_data[,-c(1,9)], lm_w211)
+```
+`r lm_w211_cv_err` 
+Max final exam score: 40; so the error is `r (lm_w211_cv_err*100)/40` percent.
+
+
+### Trace the change of R2 of the FE predictive model as the weekly data accumulate
+
+```{r}
+# create a data frame with R-square, adj R-square, and cross-validated R2 values for all the models
+# final exam
+r2.fe.df <- data.frame(week=c(3:5,7:12),
+                    R2=c(getR2(lm_w23_fe), getR2(lm_w24_fe), getR2(lm_w25_fe), getR2(lm_w27),
+                         getR2(lm_w28), getR2(lm_w29), getR2(lm_w210), getR2(lm_w211), 0.3492), 
+                    Adj_R2=c(getAdjR2(lm_w23_fe), getAdjR2(lm_w24_fe), getAdjR2(lm_w25_fe),
+                             getAdjR2(lm_w27), getAdjR2(lm_w28), getAdjR2(lm_w29),
+                             getAdjR2(lm_w210),getAdjR2(lm_w211), 0.3381),
+                    CV_R2=c(lm_w23_cv_R2[2], lm_w24_cv_R2[2], lm_w25_cv_R2[2], lm_w27_cv_R2[2],
+                            lm_w28_cv_R2[2], lm_w29_cv_R2[2], lm_w210_cv_R2[2],
+                            lm_w211_cv_R2[2], 0.3243))
+# midterm exam
+r2.mt.df <- data.frame(week=c(3:5),
+                    R2=c(getR2(lm_w23_mt), getR2(lm_w24_mt), getR2(lm_w25_mt)), 
+                    Adj_R2=c(getAdjR2(lm_w23_mt), getAdjR2(lm_w24_mt), getAdjR2(lm_w25_mt)),
+                    CV_R2=c(lm_w23_mt_cv_R2[2], lm_w24_mt_cv_R2[2], lm_w25_mt_cv_R2[2]))
+
+
+```
+
+Plot the data
+```{r include=FALSE}
+plot.R2.change <- function(r2.df, start.week=3, end.week) { 
+    ggplot(r2.df, aes(week)) + 
+      geom_line(aes(y = R2, colour = "R2")) + 
+      geom_line(aes(y = Adj_R2, colour = "Adj_R2")) +
+      geom_line(aes(y = CV_R2, colour = "CV_R2")) +
+      geom_point(aes(y = R2, colour = "R2")) +
+      geom_point(aes(y = Adj_R2, colour = "Adj_R2")) +
+      geom_point(aes(y = CV_R2, colour = "CV_R2")) +
+      expand_limits(y=c(0,0.5), x=c(start.week, end.week)) +
+      scale_x_continuous(breaks=seq(start.week,end.week,1)) +
+      ggtitle("Change in R2, Adj R2, and cross-validated R2 as more data were included in the model") +
+      theme_bw()
+}
+```
+
+```{r}
+plot.R2.change(r2.fe.df, end.week = 12)
+```
+
+```{r}
+plot.R2.change(r2.mt.df, end.week = 5)
+```
+
+
+### Trace the change cross-validated standard error of FE prediction
+```{r}
+# create a data frame with CV standard errors for all the models
+
+cv.err.df <- data.frame(week=c(3:5,7:12),
+                        CV_FE_err=c(lm_w23_cv_err, lm_w24_cv_err, lm_w25_cv_err, lm_w27_cv_err,
+                                 lm_w28_cv_err, lm_w29_cv_err, lm_w210_cv_err, lm_w211_cv_err,
+                                 8.08),
+                        CV_MT_err=c(lm_w23_mt_cv_err, lm_w24_mt_cv_err, lm_w25_mt_cv_err,
+                                    rep(NA, 6)))
+
+```
+
+Plot the data
+```{r message=FALSE, error=FALSE}
+ggplot(cv.err.df, aes(week)) + 
+  geom_line(aes(y = CV_FE_err, colour = "CV_FE_err")) + 
+  geom_point(aes(y = CV_FE_err, colour = "CV_FE_err")) +
+  geom_line(aes(y = CV_MT_err, colour = "CV_MT_err")) + 
+  geom_point(aes(y = CV_MT_err, colour = "CV_MT_err")) +
+  expand_limits(y=c(0,10)) +
+  ylab("CV-ed standard error") +
+  scale_x_continuous(breaks=seq(2,13,1)) +
+  ggtitle("Change in cross-validated standard error of prediction as more data were included in the model") +
+  theme_bw() 
+```
